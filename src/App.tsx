@@ -203,13 +203,12 @@ export default function App() {
         <div className="workspace-scroll">
           <header className="topbar">
             <div className="page-heading">
-              <span className="breadcrumb">{meta.eyebrow}</span>
-              <h1>{meta.title}</h1>
+              {activeScreen === "home" ? <><h1>Good evening, Kage <Icon name="spark" size={19} /></h1><span>Let’s turn your world into music.</span></> : <><span className="breadcrumb">{meta.eyebrow}</span><h1>{meta.title}</h1></>}
             </div>
             <div className="topbar-actions">
               <button className="top-search-trigger" onClick={() => navigate("search")} type="button">
                 <Icon name="search" size={16} />
-                <span>Search your library</span>
+                <span>Search songs, artists, albums...</span>
                 <kbd>Ctrl K</kbd>
               </button>
               <button
@@ -222,10 +221,7 @@ export default function App() {
               >
                 <Icon name="panel" size={18} />
               </button>
-              <div className="topbar-status">
-                <span className="provider-dot" />
-                <span>{provider.descriptor.displayName}</span>
-              </div>
+              <button aria-label="Notifications" className="icon-button notification-button" type="button"><Icon name="spark" size={17} /></button>
             </div>
           </header>
           <div className="workspace-content">{renderScreen()}</div>

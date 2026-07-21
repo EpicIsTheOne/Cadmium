@@ -1,15 +1,7 @@
-import type { ReactNode } from "react";
-import { Icon, type IconName } from "./Icon";
 import type { ProviderDescriptor } from "../domain/media";
+import { Icon, type IconName } from "./Icon";
 
-export type ScreenId =
-  | "home"
-  | "search"
-  | "mood"
-  | "mixes"
-  | "rhythm"
-  | "library"
-  | "settings";
+export type ScreenId = "home" | "search" | "mood" | "mixes" | "rhythm" | "library" | "settings";
 
 interface SidebarProps {
   activeScreen: ScreenId;
@@ -18,98 +10,49 @@ interface SidebarProps {
   provider: ProviderDescriptor;
 }
 
-interface NavItem {
-  id: ScreenId;
-  label: string;
-  icon: IconName;
-  hint?: string;
-}
-
-const primaryItems: NavItem[] = [
+const nav: Array<{ id: ScreenId; label: string; icon: IconName; preview?: boolean; divider?: boolean }> = [
   { id: "home", label: "Home", icon: "home" },
-  { id: "search", label: "Search", icon: "search", hint: "Ctrl K" },
+  { id: "search", label: "Search", icon: "search" },
+  { id: "mixes", label: "Stories", icon: "library", preview: true },
+  { id: "mood", label: "Lore", icon: "mixes", preview: true },
+  { id: "mood", label: "Mood Map", icon: "mood", preview: true },
+  { id: "mixes", label: "Mixes", icon: "rhythm", preview: true },
+  { id: "rhythm", label: "Radio", icon: "rhythm", preview: true },
+  { id: "rhythm", label: "Rhythm", icon: "mixes", preview: true },
+  { id: "library", label: "Library", icon: "library", divider: true },
 ];
 
-const exploreItems: NavItem[] = [
-  { id: "mood", label: "Mood Map", icon: "mood", hint: "Preview" },
-  { id: "mixes", label: "Mixes", icon: "mixes", hint: "Preview" },
-  { id: "rhythm", label: "Rhythm", icon: "rhythm", hint: "Preview" },
-];
-
-const libraryItems: NavItem[] = [
-  { id: "library", label: "Library", icon: "library" },
-  { id: "settings", label: "Settings", icon: "settings" },
-];
-
-export function Sidebar({
-  activeScreen,
-  onNavigate,
-  onAddMusic,
-  provider,
-}: SidebarProps) {
-  const renderItems = (items: NavItem[]): ReactNode =>
-    items.map((item) => (
-      <button
-        aria-current={activeScreen === item.id ? "page" : undefined}
-        className={"nav-item " + (activeScreen === item.id ? "is-active" : "")}
-        key={item.id}
-        onClick={() => onNavigate(item.id)}
-        title={item.hint ? item.label + " — " + item.hint : item.label}
-        type="button"
-      >
-        <Icon name={item.icon} size={18} />
-        <span className="nav-label">{item.label}</span>
-        {item.hint ? <span className="nav-hint">{item.hint}</span> : null}
-      </button>
-    ));
-
+export function Sidebar({ activeScreen, onNavigate, onAddMusic, provider }: SidebarProps) {
   return (
     <aside className="sidebar">
-      <div className="brand-lockup">
-        <button
-          aria-label="Cadmium home"
-          className="brand-mark"
-          onClick={() => onNavigate("home")}
-          type="button"
-        >
-          <Icon name="logo" size={24} />
-        </button>
-        <div className="brand-copy">
-          <span className="brand-name">Cadmium</span>
-          <span className="brand-version">FOUNDATION / 0.1</span>
-        </div>
+      <button className="brand-lockup" onClick={() => onNavigate("home")} type="button">
+        <span className="brand-mark"><Icon name="logo" size={30} /></span>
+        <span className="brand-copy"><strong>Cadmium</strong><small>Hear in Color.</small></span>
+      </button>
+      <nav aria-label="Primary navigation" className="sidebar-nav">
+        {nav.map((item, index) => (
+          <button
+            aria-current={activeScreen === item.id && (item.id === "home" || item.id === "search" || item.id === "library") ? "page" : undefined}
+            className={`nav-item ${item.divider ? "nav-divider" : ""} ${activeScreen === item.id && (item.id === "home" || item.id === "search" || item.id === "library") ? "is-active" : ""}`}
+            key={`${item.label}-${index}`}
+            onClick={() => onNavigate(item.id)}
+            title={item.preview ? `${item.label} preview` : item.label}
+            type="button"
+          >
+            <Icon name={item.icon} size={18} />
+            <span>{item.label}</span>
+            {item.preview ? <small>Preview</small> : null}
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-community">
+        <button onClick={() => onNavigate("mixes")} type="button"><Icon name="folder" size={18} /><span>Creator Rooms</span><small>Preview</small></button>
+        <button onClick={() => onNavigate("mood")} type="button"><Icon name="settings" size={18} /><span>Community</span><small>Preview</small></button>
       </div>
-
-      <div className="sidebar-scroll">
-        <nav aria-label="Primary navigation" className="nav-group">
-          <span className="nav-eyebrow">Workspace</span>
-          {renderItems(primaryItems)}
-        </nav>
-
-        <nav aria-label="Exploration navigation" className="nav-group">
-          <span className="nav-eyebrow">Explore</span>
-          {renderItems(exploreItems)}
-        </nav>
-
-        <nav aria-label="Library navigation" className="nav-group">
-          <span className="nav-eyebrow">Your space</span>
-          {renderItems(libraryItems)}
-        </nav>
-      </div>
-
-      <div className="sidebar-footer">
-        <button className="add-music-button" onClick={onAddMusic} type="button">
-          <span className="add-music-icon">
-            <Icon name="plus" size={16} />
-          </span>
-          <span className="nav-label">Add music</span>
-          <Icon className="add-music-arrow" name="arrow-up-right" size={15} />
-        </button>
-        <div className="provider-pill">
-          <span className="provider-dot" />
-          <span>{provider.displayName}</span>
-          <span className="provider-status">{provider.status}</span>
-        </div>
+      <div className="sidebar-profile">
+        <button className="profile-avatar" onClick={onAddMusic} title="Add a music folder" type="button"><Icon name="plus" size={18} /></button>
+        <div><strong>Kage:305 <span>PRO</span></strong><small>{provider.displayName}</small></div>
+        <button aria-label="Settings" className="profile-settings" onClick={() => onNavigate("settings")} type="button"><Icon name="chevron-down" size={15} /></button>
       </div>
     </aside>
   );
