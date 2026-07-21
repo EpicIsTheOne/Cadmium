@@ -1,0 +1,195 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Icon } from "./components/Icon";
+import { BottomPlayer } from "./components/BottomPlayer";
+import { ContextPanel } from "./components/ContextPanel";
+import { Sidebar, type ScreenId } from "./components/Sidebar";
+import { EmptyState } from "./components/EmptyState";
+import { countLibraryEntities, createEmptyMusicProvider } from "./providers/music-provider";
+import type { NormalizedLibrary } from "./domain/media";
+import { HomeScreen } from "./screens/HomeScreen";
+import { LibraryScreen } from "./screens/LibraryScreen";
+import { PreviewScreen } from "./screens/PreviewScreen";
+import { SearchScreen } from "./screens/SearchScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
+
+const screenMeta: Record<ScreenId, { eyebrow: string; title: string }> = {
+  home: { eyebrow: "Workspace / overview", title: "Home" },
+  search: { eyebrow: "Workspace / search", title: "Search" },
+  mood: { eyebrow: "Explore / signal", title: "Mood Map" },
+  mixes: { eyebrow: "Explore / blends", title: "Mixes" },
+  rhythm: { eyebrow: "Explore / motion", title: "Rhythm" },
+  library: { eyebrow: "Your space / collection", title: "Library" },
+  settings: { eyebrow: "Your space / control room", title: "Settings" },
+};
+
+const zeroCounts = {
+  tracks: 0,
+  albums: 0,
+  artists: 0,
+  playlists: 0,
+};
+
+export default function App() {
+  const provider = useMemo(() => createEmptyMusicProvider(), []);
+  const [activeScreen, setActiveScreen] = useState<ScreenId>("home");
+  const [library, setLibrary] = useState<NormalizedLibrary | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [contextPanelOpen, setContextPanelOpen] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [searchFocusVersion, setSearchFocusVersion] = useState(0);
+
+  const loadLibrary = useCallback(() => {
+    setLoadError(null);
+    setLibrary(null);
+    void provider
+      .getLibrary()
+      .then(setLibrary)
+      .catch(() => {
+        setLoadError("The provider could not produce a library graph.");
+      });
+  }, [provider]);
+
+  useEffect(() => {
+    loadLibrary();
+  }, [loadLibrary]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        setActiveScreen("search");
+        setSearchFocusVersion((current) => current + 1);
+      }
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
+
+  const handleAddMusic = useCallback(async () => {
+    const result = await provider.requestAddMusic();
+    setNotice(result.message);
+    window.setTimeout(() => setNotice(null), 5200);
+  }, [provider]);
+
+  const navigate = (screen: ScreenId) => {
+    setActiveScreen(screen);
+    if (screen === "search") {
+      setSearchFocusVersion((current) => current + 1);
+    }
+  };
+
+  const counts = library ? countLibraryEntities(library) : zeroCounts;
+  const meta = screenMeta[activeScreen];
+
+  const renderScreen = () => {
+    if (library === null && !loadError) {
+      return <LoadingState />;
+    }
+
+    if (loadError) {
+      return <ErrorState message={loadError} onRetry={loadLibrary} />;
+    }
+
+    if (!library) {
+      return <LoadingState />;
+    }
+
+    switch (activeScreen) {
+      case "home":
+        return <HomeScreen counts={counts} onAddMusic={handleAddMusic} onNavigate={navigate} />;
+      case "search":
+        return (
+          <SearchScreen
+            key={searchFocusVersion}
+            library={library}
+            onAddMusic={handleAddMusic}
+            provider={provider}
+          />
+        );
+      case "library":
+        return <LibraryScreen counts={counts} onAddMusic={handleAddMusic} />;
+      case "settings":
+        return <SettingsScreen onAddMusic={handleAddMusic} provider={provider} />;
+      case "mood":
+      case "mixes":
+      case "rhythm":
+        return <PreviewScreen kind={activeScreen} onNavigate={navigate} />;
+    }
+  };
+
+  return (
+    <div className={"app-shell " + (!contextPanelOpen ? "context-collapsed" : "")}>
+      <Sidebar activeScreen={activeScreen} onAddMusic={handleAddMusic} onNavigate={navigate} />
+
+      <main className="workspace" id="main-content">
+        <div className="workspace-scroll">
+          <header className="topbar">
+            <div className="page-heading">
+              <span className="breadcrumb">{meta.eyebrow}</span>
+              <h1>{meta.title}</h1>
+            </div>
+            <div className="topbar-actions">
+              <button className="top-search-trigger" onClick={() => navigate("search")} type="button">
+                <Icon name="search" size={16} />
+                <span>Search your library</span>
+                <kbd>Ctrl K</kbd>
+              </button>
+              <button
+                aria-expanded={contextPanelOpen}
+                aria-label={contextPanelOpen ? "Hide context panel" : "Show context panel"}
+                className="icon-button panel-toggle"
+                onClick={() => setContextPanelOpen((current) => !current)}
+                title={contextPanelOpen ? "Hide context panel" : "Show context panel"}
+                type="button"
+              >
+                <Icon name="panel" size={18} />
+              </button>
+              <div className="topbar-status">
+                <span className="provider-dot" />
+                <span>Provider ready</span>
+              </div>
+            </div>
+          </header>
+          <div className="workspace-content">{renderScreen()}</div>
+        </div>
+      </main>
+
+      {contextPanelOpen ? <ContextPanel onClose={() => setContextPanelOpen(false)} /> : null}
+      <BottomPlayer />
+
+      {notice ? (
+        <div aria-live="polite" className="toast" role="status">
+          <span className="toast-icon"><Icon name="spark" size={16} /></span>
+          <span>{notice}</span>
+          <button aria-label="Dismiss notice" className="toast-close" onClick={() => setNotice(null)} type="button">
+            <Icon name="close" size={15} />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <section className="load-state panel-surface" aria-live="polite">
+      <div className="loading-orb" aria-hidden="true"><span /></div>
+      <span className="eyebrow">Provider handshake</span>
+      <h2>Waking the empty graph...</h2>
+      <div className="loading-lines" aria-hidden="true"><span /><span /><span /></div>
+    </section>
+  );
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <EmptyState
+      actionLabel="Retry provider"
+      body={message}
+      icon="refresh"
+      onAction={onRetry}
+      title="The provider went quiet."
+    />
+  );
+}

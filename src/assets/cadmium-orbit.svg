@@ -1,0 +1,33 @@
+<svg width="640" height="360" viewBox="0 0 640 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="orbit-bg" x1="60" y1="30" x2="586" y2="332" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10162B"/>
+      <stop offset="1" stop-color="#141027"/>
+    </linearGradient>
+    <linearGradient id="orbit-stroke" x1="146" y1="90" x2="484" y2="288" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF5B4A"/>
+      <stop offset=".5" stop-color="#F62B88"/>
+      <stop offset="1" stop-color="#5F6DFF"/>
+    </linearGradient>
+    <radialGradient id="orbit-core" cx="0" cy="0" r="1" gradientTransform="translate(324 181) rotate(90) scale(80)">
+      <stop stop-color="#FFB347" stop-opacity=".95"/>
+      <stop offset=".35" stop-color="#F64A8F" stop-opacity=".62"/>
+      <stop offset="1" stop-color="#5A57FF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="orbit-blur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" rx="24" fill="url(#orbit-bg)"/>
+  <circle cx="324" cy="181" r="78" fill="url(#orbit-core)" filter="url(#orbit-blur)"/>
+  <ellipse cx="324" cy="181" rx="186" ry="84" transform="rotate(-17 324 181)" stroke="#5C6DFF" stroke-opacity=".24"/>
+  <ellipse cx="324" cy="181" rx="126" ry="58" transform="rotate(28 324 181)" stroke="#EF3D96" stroke-opacity=".35"/>
+  <ellipse cx="324" cy="181" rx="78" ry="38" transform="rotate(-33 324 181)" stroke="url(#orbit-stroke)" stroke-width="2"/>
+  <path d="M80 255C156 216 195 232 248 182C295 138 319 125 365 154C402 177 437 228 500 207C538 195 559 170 586 145" stroke="url(#orbit-stroke)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M78 278C157 239 205 250 256 204C299 166 323 157 360 177C411 204 438 247 500 226C540 212 563 184 588 162" stroke="#FF6B4D" stroke-opacity=".3" stroke-linecap="round"/>
+  <circle cx="324" cy="181" r="5" fill="#FFE09A"/>
+  <circle cx="324" cy="181" r="14" stroke="#FF5B4A" stroke-opacity=".4"/>
+  <g fill="#F54C8E">
+    <circle cx="130" cy="137" r="2"/><circle cx="180" cy="284" r="1.5"/><circle cx="449" cy="106" r="1.5"/><circle cx="524" cy="264" r="2"/>
+  </g>
+</svg>

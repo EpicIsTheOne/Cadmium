@@ -1,0 +1,27 @@
+<svg width="640" height="360" viewBox="0 0 640 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pulse-bg" x1="30" y1="45" x2="618" y2="315" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1D1129"/>
+      <stop offset=".54" stop-color="#10172D"/>
+      <stop offset="1" stop-color="#0F1B35"/>
+    </linearGradient>
+    <linearGradient id="pulse-line" x1="78" y1="208" x2="563" y2="153" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF6851"/>
+      <stop offset=".35" stop-color="#FFB74A"/>
+      <stop offset=".67" stop-color="#F045A0"/>
+      <stop offset="1" stop-color="#6387FF"/>
+    </linearGradient>
+    <filter id="pulse-glow" x="-20%" y="-100%" width="140%" height="300%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" rx="24" fill="url(#pulse-bg)"/>
+  <path d="M48 215h544" stroke="#8490BF" stroke-opacity=".18"/>
+  <path d="M48 167h544M48 263h544" stroke="#8490BF" stroke-opacity=".1"/>
+  <path d="M57 220c38-2 43-56 79-56 35 0 29 89 66 89 37 0 33-147 70-147 38 0 34 180 71 180 35 0 37-110 71-110 37 0 35 73 70 73 38 0 41-63 73-63 36 0 33 37 67 37 27 0 40-19 79-19" stroke="url(#pulse-line)" stroke-width="3" stroke-linecap="round" filter="url(#pulse-glow)" opacity=".82"/>
+  <path d="M57 220c38-2 43-56 79-56 35 0 29 89 66 89 37 0 33-147 70-147 38 0 34 180 71 180 35 0 37-110 71-110 37 0 35 73 70 73 38 0 41-63 73-63 36 0 33 37 67 37 27 0 40-19 79-19" stroke="url(#pulse-line)" stroke-width="1.5" stroke-linecap="round"/>
+  <g fill="#FFB45B">
+    <circle cx="202" cy="253" r="3"/><circle cx="272" cy="106" r="3"/><circle cx="414" cy="249" r="2.5"/><circle cx="562" cy="201" r="2.5"/>
+  </g>
+  <path d="M95 80h83M462 86h74" stroke="#F54A97" stroke-opacity=".7"/><path d="M116 93h44M493 99h35" stroke="#5B79FF" stroke-opacity=".6"/>
+</svg>

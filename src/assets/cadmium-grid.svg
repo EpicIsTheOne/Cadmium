@@ -1,0 +1,26 @@
+<svg width="640" height="360" viewBox="0 0 640 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grid-bg" x1="44" y1="18" x2="589" y2="343" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#151329"/>
+      <stop offset=".5" stop-color="#0E1C30"/>
+      <stop offset="1" stop-color="#11142B"/>
+    </linearGradient>
+    <linearGradient id="grid-edge" x1="132" y1="74" x2="494" y2="288" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FD614E"/>
+      <stop offset=".48" stop-color="#F13795"/>
+      <stop offset="1" stop-color="#547BFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" rx="24" fill="url(#grid-bg)"/>
+  <g opacity=".17" stroke="#93A4FF">
+    <path d="M0 60h640M0 120h640M0 180h640M0 240h640M0 300h640"/>
+    <path d="M80 0v360M160 0v360M240 0v360M320 0v360M400 0v360M480 0v360M560 0v360"/>
+  </g>
+  <path d="m321 51 134 78v155l-134 78-134-78V129l134-78Z" stroke="url(#grid-edge)" stroke-opacity=".42"/>
+  <path d="m321 90 100 58v117l-100 58-100-58V148l100-58Z" fill="#111A33" stroke="#F84C91" stroke-opacity=".36"/>
+  <path d="m321 126 67 39v78l-67 39-67-39v-78l67-39Z" fill="#1D183A" stroke="#FFAA5B" stroke-opacity=".66"/>
+  <path d="m321 154 43 25v50l-43 25-43-25v-50l43-25Z" fill="#EF477D" fill-opacity=".22" stroke="#FFCC8A" stroke-opacity=".75"/>
+  <circle cx="321" cy="204" r="11" fill="#FF934E"/>
+  <path d="M321 51v38M455 129l-34 19M455 284l-34-19M321 362v-39M187 284l34-19M187 129l34 19" stroke="#F9B05B" stroke-opacity=".55"/>
+  <circle cx="144" cy="88" r="3" fill="#FF5C95"/><circle cx="512" cy="91" r="2" fill="#637BFF"/><circle cx="536" cy="280" r="3" fill="#FF784F"/>
+</svg>
