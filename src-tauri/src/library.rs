@@ -148,6 +148,14 @@ const MIGRATIONS: &[(i64, &str)] = &[
         CREATE INDEX idx_favorite_tracks_favorited_at ON favorite_tracks(favorited_at DESC);
         "#,
     ),
+    (
+        5,
+        r#"
+        ALTER TABLE generated_playlists ADD COLUMN generation_mode TEXT NOT NULL DEFAULT 'legacy_local';
+        ALTER TABLE generated_playlists ADD COLUMN model TEXT;
+        ALTER TABLE generated_playlists ADD COLUMN track_reasons_json TEXT NOT NULL DEFAULT '{}';
+        "#,
+    ),
 ];
 
 #[derive(Debug)]
@@ -243,7 +251,17 @@ pub struct NormalizedLibraryDto {
     pub tracks: Vec<TrackDto>,
     pub albums: Vec<AlbumDto>,
     pub artists: Vec<ArtistDto>,
+    pub playlists: Vec<PlaylistDto>,
     pub recent_track_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistDto {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub track_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -352,8 +370,21 @@ pub struct DiscoveryDto {
 pub struct GeneratedPlaylistDto {
     pub id: String,
     pub name: String,
+    pub prompt: String,
     pub rationale: String,
+    pub generation_mode: String,
+    pub model: Option<String>,
+    pub created_at: i64,
+    pub track_reasons: Vec<TrackReasonDto>,
     pub track_ids: Vec<String>,
+    pub fallback_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackReasonDto {
+    pub track_id: String,
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -540,13 +571,74 @@ impl LibraryRepository {
         let artists = self.load_artists()?;
         let albums = self.load_albums()?;
         let tracks = self.load_tracks()?;
+        let playlists = self
+            .get_generated_playlists(100)?
+            .into_iter()
+            .map(|playlist| PlaylistDto {
+                id: playlist.id,
+                name: playlist.name,
+                description: playlist.rationale,
+                track_ids: playlist.track_ids,
+            })
+            .collect();
         let recent_track_ids = self.get_recent_track_ids()?;
         Ok(NormalizedLibraryDto {
             tracks,
             albums,
             artists,
+            playlists,
             recent_track_ids,
         })
+    }
+
+    pub fn get_generated_playlists(
+        &self,
+        limit: usize,
+    ) -> LibraryResult<Vec<GeneratedPlaylistDto>> {
+        let mut generated_statement = self.conn.prepare(
+            "SELECT id, name, prompt, rationale, generation_mode, model, created_at, track_reasons_json
+             FROM generated_playlists ORDER BY created_at DESC LIMIT ?1",
+        )?;
+        let generated_rows = generated_statement
+            .query_map(params![limit.clamp(1, 100) as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut generated_playlists = Vec::new();
+        for (id, name, prompt, rationale, generation_mode, model, created_at, reasons_json) in
+            generated_rows
+        {
+            let mut tracks_statement = self.conn.prepare(
+                "SELECT track_id FROM generated_playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )?;
+            let track_ids = tracks_statement
+                .query_map(params![id], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            let track_reasons =
+                serde_json::from_str::<Vec<TrackReasonDto>>(&reasons_json).unwrap_or_default();
+            generated_playlists.push(GeneratedPlaylistDto {
+                id,
+                name,
+                prompt,
+                rationale,
+                generation_mode,
+                model,
+                created_at,
+                track_reasons,
+                track_ids,
+                fallback_reason: None,
+            });
+        }
+        Ok(generated_playlists)
     }
 
     pub fn search(&self, raw_query: &str) -> LibraryResult<SearchResultsDto> {
@@ -650,6 +742,27 @@ impl LibraryRepository {
         )?;
         tx.commit()?;
         Ok(normalized)
+    }
+
+    pub fn get_ai_cloud_enabled(&self) -> LibraryResult<bool> {
+        let value = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'ai_cloud_enabled'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(value.as_deref() != Some("0"))
+    }
+
+    pub fn set_ai_cloud_enabled(&mut self, enabled: bool) -> LibraryResult<bool> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('ai_cloud_enabled', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![if enabled { "1" } else { "0" }],
+        )?;
+        Ok(enabled)
     }
 
     pub fn get_playback_state(&self) -> LibraryResult<PlaybackStateDto> {
@@ -764,9 +877,9 @@ impl LibraryRepository {
     }
 
     pub fn get_favorite_track_ids(&self) -> LibraryResult<Vec<String>> {
-        let mut statement = self.conn.prepare(
-            "SELECT track_id FROM favorite_tracks ORDER BY favorited_at DESC, track_id",
-        )?;
+        let mut statement = self
+            .conn
+            .prepare("SELECT track_id FROM favorite_tracks ORDER BY favorited_at DESC, track_id")?;
         let track_ids = statement
             .query_map([], |row| row.get(0))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -963,33 +1076,7 @@ impl LibraryRepository {
                     .unwrap_or_else(|| "No year metadata".to_owned()),
             },
         ];
-        let mut generated_statement = self.conn.prepare(
-            "SELECT id, name, rationale FROM generated_playlists ORDER BY created_at DESC LIMIT 20",
-        )?;
-        let generated_rows = generated_statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut generated_playlists = Vec::new();
-        for (id, name, rationale) in generated_rows {
-            let mut tracks_statement = self.conn.prepare(
-                "SELECT track_id FROM generated_playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
-            )?;
-            let track_ids = tracks_statement
-                .query_map(params![id], |row| row.get(0))?
-                .collect::<Result<Vec<String>, _>>()?;
-            generated_playlists.push(GeneratedPlaylistDto {
-                id,
-                name,
-                rationale,
-                track_ids,
-            });
-        }
+        let generated_playlists = self.get_generated_playlists(20)?;
         Ok(DiscoveryDto {
             stories,
             lore,
@@ -1045,11 +1132,98 @@ impl LibraryRepository {
                 "add music before generating a playlist".to_owned(),
             ));
         }
-        let id = stable_id("generated-playlist", &format!("{}-{}", prompt, now_ms()));
         let name = prompt.chars().take(48).collect::<String>();
         let rationale = "Ranked locally using prompt terms, embedded genre metadata, and explainable mood heuristics. No listening data left this device.".to_owned();
+        let reasons = track_ids
+            .iter()
+            .map(|track_id| TrackReasonDto {
+                track_id: track_id.clone(),
+                reason: "Matched by local prompt, genre, and mood signals.".to_owned(),
+            })
+            .collect::<Vec<_>>();
+        self.save_generated_playlist(
+            prompt,
+            &name,
+            &rationale,
+            &track_ids,
+            &reasons,
+            "local_fallback",
+            None,
+            None,
+        )
+    }
+
+    pub fn save_generated_playlist(
+        &mut self,
+        raw_prompt: &str,
+        raw_name: &str,
+        raw_rationale: &str,
+        requested_track_ids: &[String],
+        reasons: &[TrackReasonDto],
+        generation_mode: &str,
+        model: Option<&str>,
+        fallback_reason: Option<String>,
+    ) -> LibraryResult<GeneratedPlaylistDto> {
+        let prompt = raw_prompt.trim();
+        if prompt.is_empty() || prompt.chars().count() > 200 {
+            return Err(LibraryError::InvalidInput(
+                "playlist prompt must contain 1 to 200 characters".to_owned(),
+            ));
+        }
+        let name = raw_name.trim().chars().take(80).collect::<String>();
+        if name.is_empty() {
+            return Err(LibraryError::InvalidInput(
+                "generated playlist name cannot be empty".to_owned(),
+            ));
+        }
+        let rationale = raw_rationale.trim().chars().take(600).collect::<String>();
+        let available = self
+            .load_tracks()?
+            .into_iter()
+            .filter(|track| track.available)
+            .map(|track| track.id)
+            .collect::<HashSet<_>>();
+        let mut seen = HashSet::new();
+        let track_ids = requested_track_ids
+            .iter()
+            .filter(|id| available.contains(*id) && seen.insert((*id).clone()))
+            .take(25)
+            .cloned()
+            .collect::<Vec<_>>();
+        if track_ids.is_empty() {
+            return Err(LibraryError::InvalidInput(
+                "generated playlist contains no available library tracks".to_owned(),
+            ));
+        }
+        let allowed_ids = track_ids.iter().cloned().collect::<HashSet<_>>();
+        let track_reasons = reasons
+            .iter()
+            .filter(|reason| allowed_ids.contains(&reason.track_id))
+            .map(|reason| TrackReasonDto {
+                track_id: reason.track_id.clone(),
+                reason: reason.reason.trim().chars().take(180).collect(),
+            })
+            .collect::<Vec<_>>();
+        let reasons_json = serde_json::to_string(&track_reasons)
+            .map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let created_at = now_ms();
+        let id = stable_id("generated-playlist", &format!("{}-{created_at}", prompt));
         let tx = self.conn.transaction()?;
-        tx.execute("INSERT INTO generated_playlists (id, name, prompt, rationale, created_at) VALUES (?1, ?2, ?3, ?4, ?5)", params![id, name, prompt, rationale, now_ms()])?;
+        tx.execute(
+            "INSERT INTO generated_playlists
+             (id, name, prompt, rationale, created_at, generation_mode, model, track_reasons_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id,
+                name,
+                prompt,
+                rationale,
+                created_at,
+                generation_mode,
+                model,
+                reasons_json
+            ],
+        )?;
         for (position, track_id) in track_ids.iter().enumerate() {
             tx.execute("INSERT INTO generated_playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)", params![id, track_id, position as i64])?;
         }
@@ -1057,9 +1231,22 @@ impl LibraryRepository {
         Ok(GeneratedPlaylistDto {
             id,
             name,
+            prompt: prompt.to_owned(),
             rationale,
+            generation_mode: generation_mode.to_owned(),
+            model: model.map(str::to_owned),
+            created_at,
+            track_reasons,
             track_ids,
+            fallback_reason,
         })
+    }
+
+    pub fn delete_generated_playlist(&mut self, playlist_id: &str) -> LibraryResult<bool> {
+        Ok(self.conn.execute(
+            "DELETE FROM generated_playlists WHERE id = ?1",
+            params![playlist_id.trim()],
+        )? > 0)
     }
 
     pub fn start_radio(&self, seed_track_id: &str) -> LibraryResult<RadioSessionDto> {
@@ -1814,7 +2001,7 @@ mod tests {
     fn migrations_create_the_persistent_schema() {
         let root = temp_root("migrations");
         let repository = LibraryRepository::open_in_memory(&root).unwrap();
-        assert_eq!(repository.schema_version().unwrap(), 4);
+        assert_eq!(repository.schema_version().unwrap(), 5);
         let tables: i64 = repository
             .conn
             .query_row(
@@ -1876,6 +2063,8 @@ mod tests {
 
         let playlist = repository.generate_playlist("calm night").unwrap();
         assert_eq!(playlist.track_ids, vec![track_id.clone()]);
+        assert_eq!(playlist.generation_mode, "local_fallback");
+        assert_eq!(repository.get_library().unwrap().playlists.len(), 1);
         assert!(repository.generate_playlist("   ").is_err());
 
         let radio = repository.start_radio(&track_id).unwrap();
@@ -1891,14 +2080,58 @@ mod tests {
         fs::create_dir_all(&music).unwrap();
         copy_fixture_tone(&music.join("Favorite.wav"));
         let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
-        repository.add_watched_folder(music.to_str().unwrap()).unwrap();
+        repository
+            .add_watched_folder(music.to_str().unwrap())
+            .unwrap();
         let track_id = repository.get_library().unwrap().tracks[0].id.clone();
 
         assert!(repository.get_favorite_track_ids().unwrap().is_empty());
         assert!(repository.set_track_favorite(&track_id, true).unwrap());
-        assert_eq!(repository.get_favorite_track_ids().unwrap(), vec![track_id.clone()]);
+        assert_eq!(
+            repository.get_favorite_track_ids().unwrap(),
+            vec![track_id.clone()]
+        );
         assert!(!repository.set_track_favorite(&track_id, false).unwrap());
         assert!(repository.get_favorite_track_ids().unwrap().is_empty());
         assert!(repository.set_track_favorite("missing", true).is_err());
+    }
+
+    #[test]
+    fn codex_playlist_metadata_round_trips_and_deletes() {
+        let root = temp_root("codex-playlist");
+        let music = root.join("music");
+        fs::create_dir_all(&music).unwrap();
+        copy_fixture_tone(&music.join("Neon.wav"));
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+        repository
+            .add_watched_folder(music.to_str().unwrap())
+            .unwrap();
+        let track_id = repository.get_library().unwrap().tracks[0].id.clone();
+        let saved = repository
+            .save_generated_playlist(
+                "night drive",
+                "Neon Route",
+                "Curated from the supplied catalog.",
+                std::slice::from_ref(&track_id),
+                &[TrackReasonDto {
+                    track_id: track_id.clone(),
+                    reason: "Bright pulse".to_owned(),
+                }],
+                "codex",
+                Some("test-model"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(saved.generation_mode, "codex");
+        assert_eq!(saved.model.as_deref(), Some("test-model"));
+        assert_eq!(
+            repository.get_generated_playlists(20).unwrap()[0]
+                .track_reasons
+                .len(),
+            1
+        );
+        assert_eq!(repository.get_library().unwrap().playlists.len(), 1);
+        assert!(repository.delete_generated_playlist(&saved.id).unwrap());
+        assert!(repository.get_generated_playlists(20).unwrap().is_empty());
     }
 }

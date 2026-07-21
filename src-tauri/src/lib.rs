@@ -1,3 +1,4 @@
+mod ai;
 mod commands;
 mod library;
 
@@ -32,7 +33,13 @@ pub fn run() {
             commands::set_track_favorite,
             commands::record_recent_play,
             commands::get_discovery,
+            commands::get_ai_status,
+            commands::start_codex_login,
+            commands::cancel_codex_login,
+            commands::set_ai_cloud_enabled,
             commands::generate_ai_playlist,
+            commands::cancel_ai_generation,
+            commands::delete_generated_playlist,
             commands::start_radio,
             commands::analyze_rhythm
         ])

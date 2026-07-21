@@ -39,8 +39,14 @@ export interface DiscoveryData {
 export interface GeneratedPlaylist {
   readonly id: string;
   readonly name: string;
+  readonly prompt: string;
   readonly rationale: string;
+  readonly generationMode: "codex" | "local_fallback" | "legacy_local" | string;
+  readonly model?: string | null;
+  readonly createdAt: number;
+  readonly trackReasons: readonly { readonly trackId: TrackId; readonly reason: string }[];
   readonly trackIds: readonly TrackId[];
+  readonly fallbackReason?: string | null;
 }
 
 export interface RadioSession {

@@ -6,6 +6,8 @@ import type {
   ArtistId,
   MusicProvider,
   NormalizedLibrary,
+  Playlist,
+  PlaylistId,
   QueueItem,
   SearchResults,
   Track,
@@ -61,7 +63,15 @@ interface BackendLibrary {
   tracks: BackendTrack[];
   albums: BackendAlbum[];
   artists: BackendArtist[];
+  playlists: BackendPlaylist[];
   recentTrackIds: string[];
+}
+
+interface BackendPlaylist {
+  id: string;
+  name: string;
+  description: string;
+  trackIds: string[];
 }
 
 interface BackendSearchResults {
@@ -117,6 +127,20 @@ export interface WatchedFolder {
   readonly unavailableCount: number;
 }
 
+export interface AiStatus {
+  readonly state: "connected" | "signedOut" | "codexMissing" | "disabled" | "error" | string;
+  readonly connected: boolean;
+  readonly cloudEnabled: boolean;
+  readonly planType?: string | null;
+  readonly models: readonly string[];
+  readonly message: string;
+}
+
+export interface AiLogin {
+  readonly loginId: string;
+  readonly authUrl: string;
+}
+
 const localDescriptor = {
   id: "local-library",
   displayName: "Local library",
@@ -139,6 +163,7 @@ const artwork = (path: string | null | undefined, alt: string) =>
 const asTrackId = (id: string) => id as TrackId;
 const asAlbumId = (id: string) => id as AlbumId;
 const asArtistId = (id: string) => id as ArtistId;
+const asPlaylistId = (id: string) => id as PlaylistId;
 
 export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence {
   readonly descriptor = localDescriptor;
@@ -283,6 +308,30 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     return mapTrackIds(data);
   }
 
+  async getAiStatus(): Promise<AiStatus> {
+    return this.call<AiStatus>("get_ai_status");
+  }
+
+  async startCodexLogin(): Promise<AiLogin> {
+    return this.call<AiLogin>("start_codex_login");
+  }
+
+  async cancelCodexLogin(loginId: string): Promise<void> {
+    await this.call<void>("cancel_codex_login", { loginId });
+  }
+
+  async setAiCloudEnabled(enabled: boolean): Promise<boolean> {
+    return this.call<boolean>("set_ai_cloud_enabled", { enabled });
+  }
+
+  async cancelAiGeneration(): Promise<void> {
+    await this.call<void>("cancel_ai_generation");
+  }
+
+  async deleteGeneratedPlaylist(playlistId: string): Promise<boolean> {
+    return this.call<boolean>("delete_generated_playlist", { playlistId });
+  }
+
   async generateAiPlaylist(prompt: string): Promise<GeneratedPlaylist> {
     const result = await this.call<GeneratedPlaylist>("generate_ai_playlist", { prompt });
     return { ...result, trackIds: result.trackIds.map(asTrackId) };
@@ -312,6 +361,10 @@ function mapTrackIds(data: DiscoveryData): DiscoveryData {
     generatedPlaylists: data.generatedPlaylists.map((playlist) => ({
       ...playlist,
       trackIds: playlist.trackIds.map(asTrackId),
+      trackReasons: playlist.trackReasons.map((reason) => ({
+        ...reason,
+        trackId: asTrackId(reason.trackId),
+      })),
     })),
   };
 }
@@ -320,6 +373,7 @@ function mapLibrary(backend: BackendLibrary): NormalizedLibrary {
   const artistsById: Record<string, Artist> = {};
   const albumsById: Record<string, Album> = {};
   const tracksById: Record<string, Track> = {};
+  const playlistsById: Record<string, Playlist> = {};
 
   for (const artist of backend.artists) {
     artistsById[artist.id] = {
@@ -358,16 +412,24 @@ function mapLibrary(backend: BackendLibrary): NormalizedLibrary {
       },
     };
   }
+  for (const playlist of backend.playlists) {
+    playlistsById[playlist.id] = {
+      id: asPlaylistId(playlist.id),
+      name: playlist.name,
+      description: playlist.description,
+      trackIds: playlist.trackIds.map(asTrackId),
+    };
+  }
 
   return {
     tracksById,
     albumsById,
     artistsById,
-    playlistsById: {},
+    playlistsById,
     trackOrder: backend.tracks.map((track) => asTrackId(track.id)),
     albumOrder: backend.albums.map((album) => asAlbumId(album.id)),
     artistOrder: backend.artists.map((artist) => asArtistId(artist.id)),
-    playlistOrder: [],
+    playlistOrder: backend.playlists.map((playlist) => asPlaylistId(playlist.id)),
     recentTrackIds: backend.recentTrackIds.map(asTrackId),
   };
 }

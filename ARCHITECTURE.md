@@ -38,6 +38,8 @@ The existing `EmptyMusicProvider` and in-memory provider remain useful for contr
 
 Home shows real counts and recent plays; Search queries Rust-backed normalized records; Library lists available and unavailable tracks plus watched-folder controls; Settings shows provider capabilities, folders, and persisted volume; the context panel and bottom player reflect the singleton queue/playback state. Stories, Lore, Mood Map, AI Playlists, Mixes, Radio, and Rhythm consume only typed `LocalLibraryProvider` discovery results.
 
+AI Playlist Director uses a single managed `codex app-server --stdio` process and the machine's existing Codex/ChatGPT OAuth session. The renderer receives only sanitized connection state. Generation runs in ephemeral read-only threads with approvals and tools declined, sends a bounded metadata catalog without filesystem paths, validates returned track IDs locally, and falls back to deterministic local ranking when Codex is unavailable. Generated playlists are persisted in SQLite and exposed through the normalized playlist graph.
+
 ## Verification seams
 
 Rust unit tests cover migrations, the legal deterministic WAV fixture, metadata fallback, scan/search, and missing-file reconciliation. Vitest covers normalized empty-provider contracts, queue/shuffle/repeat transitions, and no-autoplay playback restoration. Installer signing, updater behavior, external services, and codec support beyond the local WebView remain outside this pass.

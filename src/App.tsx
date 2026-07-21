@@ -51,6 +51,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [isFolderDragActive, setFolderDragActive] = useState(false);
   const [searchFocusVersion, setSearchFocusVersion] = useState(0);
+  const [aiFocusVersion, setAiFocusVersion] = useState(0);
   const playbackInitialized = useRef(false);
 
   const loadLibrary = useCallback(async () => {
@@ -193,6 +194,9 @@ export default function App() {
     if (screen === "search") {
       setSearchFocusVersion((current) => current + 1);
     }
+    if (screen === "ai") {
+      setAiFocusVersion((current) => current + 1);
+    }
   };
 
   const counts = library ? countLibraryEntities(library) : zeroCounts;
@@ -251,7 +255,14 @@ export default function App() {
       case "mixes":
       case "radio":
       case "rhythm":
-        return <DiscoveryScreen kind={activeScreen} library={library} provider={provider instanceof LocalLibraryProvider ? provider : null} />;
+        return <DiscoveryScreen
+          key={activeScreen === "ai" ? `ai-${aiFocusVersion}` : activeScreen}
+          kind={activeScreen}
+          library={library}
+          onAddMusic={handleAddMusic}
+          onLibraryChanged={loadLibrary}
+          provider={provider instanceof LocalLibraryProvider ? provider : null}
+        />;
     }
   };
 

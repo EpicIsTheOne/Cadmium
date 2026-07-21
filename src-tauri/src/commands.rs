@@ -1,8 +1,10 @@
+use crate::ai::{AiCatalogTrack, AiError, AiLoginDto, AiService, AiStatusDto};
 use crate::library::{
     DiscoveryDto, GeneratedPlaylistDto, LibraryRepository, NormalizedLibraryDto, PlaybackStateDto,
     QueueItemDto, RadioSessionDto, RhythmProfileDto, ScanSummaryDto, SearchResultsDto, SettingsDto,
-    WatchedFolderDto,
+    TrackReasonDto, WatchedFolderDto,
 };
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
@@ -10,14 +12,18 @@ use tauri_plugin_dialog::DialogExt;
 
 pub struct AppState {
     pub repository: Mutex<LibraryRepository>,
+    pub ai: AiService,
 }
 
 impl AppState {
     pub fn new(data_dir: &Path) -> Result<Self, String> {
+        let repository = LibraryRepository::open(data_dir).map_err(|error| error.to_string())?;
+        let cloud_enabled = repository
+            .get_ai_cloud_enabled()
+            .map_err(|error| error.to_string())?;
         Ok(Self {
-            repository: Mutex::new(
-                LibraryRepository::open(data_dir).map_err(|error| error.to_string())?,
-            ),
+            repository: Mutex::new(repository),
+            ai: AiService::new(data_dir, cloud_enabled),
         })
     }
 }
@@ -318,8 +324,146 @@ pub fn generate_ai_playlist(
     state: State<'_, AppState>,
     prompt: String,
 ) -> Result<GeneratedPlaylistDto, String> {
+    let prompt = prompt.trim().to_owned();
+    if prompt.is_empty() || prompt.chars().count() > 200 {
+        return Err("playlist prompt must contain 1 to 200 characters".to_owned());
+    }
+    let library = lock_repository(&state)?
+        .get_library()
+        .map_err(|error| error.to_string())?;
+    let artists = library
+        .artists
+        .iter()
+        .map(|artist| (artist.id.clone(), artist.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let albums = library
+        .albums
+        .iter()
+        .map(|album| (album.id.clone(), album.title.clone()))
+        .collect::<HashMap<_, _>>();
+    let catalog = library
+        .tracks
+        .iter()
+        .filter(|track| track.available)
+        .take(250)
+        .map(|track| AiCatalogTrack {
+            id: track.id.clone(),
+            title: track.title.clone(),
+            artist: track
+                .artist_ids
+                .iter()
+                .filter_map(|id| artists.get(id))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            album: track
+                .album_id
+                .as_ref()
+                .and_then(|id| albums.get(id))
+                .cloned()
+                .unwrap_or_default(),
+            genre: track.genre.clone().unwrap_or_default(),
+            year: track.year,
+            duration_ms: track.duration_ms,
+        })
+        .collect::<Vec<_>>();
+    if catalog.is_empty() {
+        return Err("add music before generating a playlist".to_owned());
+    }
+    match state.ai.generate(&prompt, &catalog) {
+        Ok(draft) => {
+            let available = catalog
+                .iter()
+                .map(|track| track.id.clone())
+                .collect::<HashSet<_>>();
+            let mut seen = HashSet::new();
+            let mut track_ids = draft
+                .tracks
+                .iter()
+                .filter(|track| available.contains(&track.id) && seen.insert(track.id.clone()))
+                .take(25)
+                .map(|track| track.id.clone())
+                .collect::<Vec<_>>();
+            for track in &catalog {
+                if track_ids.len() >= 25 {
+                    break;
+                }
+                if seen.insert(track.id.clone()) {
+                    track_ids.push(track.id.clone());
+                }
+            }
+            let reasons = draft
+                .tracks
+                .iter()
+                .filter(|choice| track_ids.contains(&choice.id))
+                .map(|choice| TrackReasonDto {
+                    track_id: choice.id.clone(),
+                    reason: choice.reason.clone(),
+                })
+                .collect::<Vec<_>>();
+            lock_repository(&state)?
+                .save_generated_playlist(
+                    &prompt,
+                    &draft.name,
+                    &draft.rationale,
+                    &track_ids,
+                    &reasons,
+                    "codex",
+                    (!draft.model.is_empty()).then_some(draft.model.as_str()),
+                    None,
+                )
+                .map_err(|error| error.to_string())
+        }
+        Err(AiError::Cancelled) => Err("AI playlist generation was cancelled".to_owned()),
+        Err(error) => {
+            let mut playlist = lock_repository(&state)?
+                .generate_playlist(&prompt)
+                .map_err(|fallback_error| fallback_error.to_string())?;
+            playlist.fallback_reason = Some(error.to_string());
+            Ok(playlist)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn get_ai_status(state: State<'_, AppState>) -> AiStatusDto {
+    state.ai.status()
+}
+
+#[tauri::command]
+pub fn start_codex_login(state: State<'_, AppState>) -> Result<AiLoginDto, String> {
+    state.ai.start_login().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn cancel_codex_login(state: State<'_, AppState>, login_id: String) -> Result<(), String> {
+    state
+        .ai
+        .cancel_login(login_id.trim())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_ai_cloud_enabled(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    let persisted = lock_repository(&state)?
+        .set_ai_cloud_enabled(enabled)
+        .map_err(|error| error.to_string())?;
+    state.ai.set_cloud_enabled(persisted);
+    Ok(persisted)
+}
+
+#[tauri::command]
+pub fn cancel_ai_generation(state: State<'_, AppState>) {
+    state.ai.cancel();
+}
+
+#[tauri::command]
+pub fn delete_generated_playlist(
+    state: State<'_, AppState>,
+    playlist_id: String,
+) -> Result<bool, String> {
     lock_repository(&state)?
-        .generate_playlist(&prompt)
+        .delete_generated_playlist(playlist_id.trim())
         .map_err(|error| error.to_string())
 }
 

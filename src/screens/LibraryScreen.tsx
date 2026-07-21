@@ -73,6 +73,26 @@ export function LibraryScreen({
         </section>
       ) : null}
 
+      {library.playlistOrder.length > 0 ? (
+        <section className="library-playlist-panel panel-surface">
+          <div className="section-heading">
+            <div><span className="eyebrow">AI directions</span><h2>Playlists</h2></div>
+            <span className="section-index">{library.playlistOrder.length} / saved</span>
+          </div>
+          <div className="library-playlist-grid">
+            {library.playlistOrder.map((playlistId) => {
+              const playlist = library.playlistsById[playlistId];
+              if (!playlist) return null;
+              return <article className="library-playlist-card" key={playlist.id}>
+                <span><Icon name="spark" size={18} /></span>
+                <div><strong>{playlist.name}</strong><small>{playlist.description || `${playlist.trackIds.length} tracks`}</small></div>
+                <button className="icon-button" disabled={!playlist.trackIds.length} onClick={() => void playbackStore.playCollection(playlist.trackIds, "playlist")} type="button" aria-label={`Play ${playlist.name}`}><Icon name="play" size={15} /></button>
+              </article>;
+            })}
+          </div>
+        </section>
+      ) : null}
+
       {counts.tracks > 0 ? (
         <section className="library-track-panel panel-surface">
           <div className="section-heading">
