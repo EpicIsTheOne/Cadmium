@@ -1,13 +1,16 @@
 # Cadmium
 
-Cadmium is a Windows-first desktop music workspace built around a calm, high-contrast shell and a replaceable media-provider boundary.
+Cadmium is a Windows-first desktop music workspace for a local collection. The desktop app keeps a normalized SQLite library, scans watched folders recursively, and owns playback in one persistent WebView service.
 
-This foundation intentionally stops short of real music behavior:
+## Implemented behavior
 
-- no filesystem scan, SQLite database, playback engine, or user-data persistence is connected yet;
-- the shipped EmptyMusicProvider returns an empty normalized graph;
-- Home, Search, Library, and Settings are usable shell states;
-- Mood Map, Mixes, and Rhythm are honest preview routes, not fabricated data experiences.
+- Choose, add, rescan, list, and remove watched folders. Paths are canonicalized and validated in Rust; removing a folder removes only Cadmium’s index records and never deletes music files.
+- Index MP3, FLAC, WAV, OGG, M4A, and AAC files with normalized title, artist, album, album artist, track/disc number, year, genre, duration, file path, availability, and safe embedded artwork references.
+- Reconcile rescans transactionally. Files that disappear remain visible as unavailable until their record is removed with its watched folder or the file returns.
+- Search normalized tracks, albums, and artists with parameterized SQLite queries.
+- Persist watched folders, settings, queue, current track, position, shuffle, repeat, volume, mute state, and recent plays under the platform app-data directory.
+- Play, pause, seek, volume, mute, previous, next, queue, shuffle, repeat off/all/one, artwork, recent tracks, and decode-error recovery from the shell-level player.
+- First launch remains an honest empty state. Mood Map, Mixes, and Rhythm are preview routes; they do not invent analysis or recommendations.
 
 ## Run it
 
@@ -27,17 +30,15 @@ Useful checks:
     npm run build
     npm run tauri:build
 
-On this Windows setup, Cargo may need to be added to the current shell first:
+If Rust is installed with rustup but is not on the current PowerShell `PATH`:
 
-    $cadmiumCargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-    $env:Path = $cadmiumCargoBin + ";" + $env:Path
+    $cadmiumToolchainBin = Join-Path $env:USERPROFILE ".rustup\toolchains\stable-x86_64-pc-windows-msvc\bin"
+    $env:Path = $cadmiumToolchainBin + ";" + $env:Path
 
-## Foundation shape
+The database is `cadmium.sqlite3` in Tauri’s app-data directory. Artwork is cached beside it under `artwork/`; audio bytes are never copied into the database.
 
-The renderer depends on the domain contracts and provider boundary, never on raw Tauri or filesystem response shapes. The providers folder contains the empty provider and a small in-memory provider for contract fixtures. See ARCHITECTURE.md for the extension seams.
+## Supported formats and limits
 
-The abstract hero image is an original Cadmium asset generated for this foundation pass. The three smaller card visuals and the app mark are local SVGs authored for this repository. No third-party or copyrighted album art is bundled.
+Lofty reads the formats above. Actual playback depends on the codecs exposed by the installed Windows WebView2/Media Foundation stack; an indexed file can therefore be unavailable to playback even when metadata was readable. Artwork is limited to verified JPEG, PNG, GIF, or WebP signatures and 4 MiB per image. The bundled deterministic WAV fixture under `src-tauri/tests/fixtures/` is test-only and is not shown to users.
 
-## Current risk boundary
-
-The browser build is the primary verification target. Tauri desktop development and Windows installer generation require the local Rust/WebView2 toolchain and may download crates on first use. Until the provider, persistence, and playback passes land, buttons that would normally touch those systems surface an explicit staged/unavailable notice.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the runtime seams and [DEPENDENCY_LICENSES.md](DEPENDENCY_LICENSES.md) for declared licenses.

@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./components/Icon";
 import { BottomPlayer } from "./components/BottomPlayer";
 import { ContextPanel } from "./components/ContextPanel";
 import { Sidebar, type ScreenId } from "./components/Sidebar";
 import { EmptyState } from "./components/EmptyState";
-import { countLibraryEntities, createEmptyMusicProvider } from "./providers/music-provider";
+import { countLibraryEntities } from "./providers/music-provider";
+import {
+  createMusicProvider,
+  LocalLibraryProvider,
+  type WatchedFolder,
+} from "./providers/local-library-provider";
 import type { NormalizedLibrary } from "./domain/media";
+import { playbackStore } from "./playback/playback-store";
 import { HomeScreen } from "./screens/HomeScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { PreviewScreen } from "./screens/PreviewScreen";
@@ -30,27 +36,42 @@ const zeroCounts = {
 };
 
 export default function App() {
-  const provider = useMemo(() => createEmptyMusicProvider(), []);
+  const provider = useMemo(() => createMusicProvider(), []);
   const [activeScreen, setActiveScreen] = useState<ScreenId>("home");
   const [library, setLibrary] = useState<NormalizedLibrary | null>(null);
+  const [folders, setFolders] = useState<readonly WatchedFolder[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [contextPanelOpen, setContextPanelOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [searchFocusVersion, setSearchFocusVersion] = useState(0);
+  const playbackInitialized = useRef(false);
 
-  const loadLibrary = useCallback(() => {
+  const loadLibrary = useCallback(async () => {
     setLoadError(null);
-    setLibrary(null);
-    void provider
-      .getLibrary()
-      .then(setLibrary)
-      .catch(() => {
-        setLoadError("The provider could not produce a library graph.");
-      });
+    try {
+      const nextLibrary = await provider.getLibrary();
+      setLibrary(nextLibrary);
+      if (provider instanceof LocalLibraryProvider) {
+        const nextFolders = await provider.getWatchedFolders();
+        setFolders(nextFolders);
+        if (!playbackInitialized.current) {
+          const snapshot = await provider.loadPlaybackSnapshot();
+          playbackStore.initialize(nextLibrary, provider, snapshot);
+          playbackInitialized.current = true;
+        } else {
+          playbackStore.setLibrary(nextLibrary);
+        }
+      } else {
+        playbackStore.initialize(nextLibrary, null);
+        playbackInitialized.current = true;
+      }
+    } catch {
+      setLoadError("The provider could not produce a library graph.");
+    }
   }, [provider]);
 
   useEffect(() => {
-    loadLibrary();
+    void loadLibrary();
   }, [loadLibrary]);
 
   useEffect(() => {
@@ -67,10 +88,44 @@ export default function App() {
   }, []);
 
   const handleAddMusic = useCallback(async () => {
-    const result = await provider.requestAddMusic();
-    setNotice(result.message);
-    window.setTimeout(() => setNotice(null), 5200);
-  }, [provider]);
+    try {
+      const result = await provider.requestAddMusic();
+      setNotice(result.message);
+      window.setTimeout(() => setNotice(null), 5200);
+      if (result.status === "accepted" && provider instanceof LocalLibraryProvider) {
+        await loadLibrary();
+      }
+    } catch {
+      setNotice("Cadmium could not add that folder. Check the selection and try again.");
+      window.setTimeout(() => setNotice(null), 5200);
+    }
+  }, [loadLibrary, provider]);
+
+  const handleRescan = useCallback(async (folderId: string) => {
+    if (!(provider instanceof LocalLibraryProvider)) {
+      return;
+    }
+    try {
+      const result = await provider.rescanWatchedFolder(folderId);
+      setNotice(`Rescanned ${result.tracksIndexed} track(s). ${result.unavailableCount} unavailable record(s).`);
+      await loadLibrary();
+    } catch {
+      setNotice("The folder could not be rescanned.");
+    }
+  }, [loadLibrary, provider]);
+
+  const handleRemoveFolder = useCallback(async (folderId: string) => {
+    if (!(provider instanceof LocalLibraryProvider)) {
+      return;
+    }
+    try {
+      const removed = await provider.removeWatchedFolder(folderId);
+      setNotice(removed ? "Watched folder removed. Your files were left untouched." : "Watched folder was already gone.");
+      await loadLibrary();
+    } catch {
+      setNotice("The watched folder could not be removed.");
+    }
+  }, [loadLibrary, provider]);
 
   const navigate = (screen: ScreenId) => {
     setActiveScreen(screen);
@@ -97,7 +152,7 @@ export default function App() {
 
     switch (activeScreen) {
       case "home":
-        return <HomeScreen counts={counts} onAddMusic={handleAddMusic} onNavigate={navigate} />;
+        return <HomeScreen counts={counts} library={library} onAddMusic={handleAddMusic} onNavigate={navigate} />;
       case "search":
         return (
           <SearchScreen
@@ -108,9 +163,26 @@ export default function App() {
           />
         );
       case "library":
-        return <LibraryScreen counts={counts} onAddMusic={handleAddMusic} />;
+        return (
+          <LibraryScreen
+            counts={counts}
+            folders={folders}
+            library={library}
+            onAddMusic={handleAddMusic}
+            onRemoveFolder={handleRemoveFolder}
+            onRescanFolder={handleRescan}
+          />
+        );
       case "settings":
-        return <SettingsScreen onAddMusic={handleAddMusic} provider={provider} />;
+        return (
+          <SettingsScreen
+            folders={folders}
+            onAddMusic={handleAddMusic}
+            onRemoveFolder={handleRemoveFolder}
+            onRescanFolder={handleRescan}
+            provider={provider}
+          />
+        );
       case "mood":
       case "mixes":
       case "rhythm":
@@ -120,7 +192,12 @@ export default function App() {
 
   return (
     <div className={"app-shell " + (!contextPanelOpen ? "context-collapsed" : "")}>
-      <Sidebar activeScreen={activeScreen} onAddMusic={handleAddMusic} onNavigate={navigate} />
+      <Sidebar
+        activeScreen={activeScreen}
+        onAddMusic={handleAddMusic}
+        onNavigate={navigate}
+        provider={provider.descriptor}
+      />
 
       <main className="workspace" id="main-content">
         <div className="workspace-scroll">
@@ -147,7 +224,7 @@ export default function App() {
               </button>
               <div className="topbar-status">
                 <span className="provider-dot" />
-                <span>Provider ready</span>
+                <span>{provider.descriptor.displayName}</span>
               </div>
             </div>
           </header>
@@ -155,8 +232,10 @@ export default function App() {
         </div>
       </main>
 
-      {contextPanelOpen ? <ContextPanel onClose={() => setContextPanelOpen(false)} /> : null}
-      <BottomPlayer />
+      {contextPanelOpen ? (
+        <ContextPanel library={library ?? undefined} onClose={() => setContextPanelOpen(false)} />
+      ) : null}
+      <BottomPlayer library={library ?? undefined} />
 
       {notice ? (
         <div aria-live="polite" className="toast" role="status">

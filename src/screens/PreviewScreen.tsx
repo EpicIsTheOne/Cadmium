@@ -33,7 +33,7 @@ const content: Record<PreviewKind, {
   rhythm: {
     label: "Rhythm / preview",
     title: "Give the pulse something to follow.",
-    body: "Rhythm will connect to playback and audio analysis in a later pass. The shell is ready; the engine is not pretending to be installed.",
+    body: "Rhythm can already read the real playback surface, but audio analysis is deliberately reserved for a later pass.",
     icon: "rhythm",
     accent: "rhythm-accent",
   },

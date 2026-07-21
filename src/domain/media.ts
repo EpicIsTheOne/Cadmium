@@ -51,7 +51,11 @@ export interface Track {
   readonly artistIds: readonly ArtistId[];
   readonly durationMs: number;
   readonly trackNumber?: number;
+  readonly discNumber?: number;
+  readonly year?: number;
+  readonly genre?: string;
   readonly explicit?: boolean;
+  readonly available: boolean;
   readonly artwork?: Artwork;
   readonly source: PlaybackSource;
 }
@@ -80,6 +84,7 @@ export interface NormalizedLibrary {
   readonly albumOrder: readonly AlbumId[];
   readonly artistOrder: readonly ArtistId[];
   readonly playlistOrder: readonly PlaylistId[];
+  readonly recentTrackIds: readonly TrackId[];
 }
 
 export interface SearchResults {
@@ -125,6 +130,7 @@ export const emptyLibrary = (): NormalizedLibrary => ({
   albumOrder: [],
   artistOrder: [],
   playlistOrder: [],
+  recentTrackIds: [],
 });
 
 export const emptySearchResults = (): SearchResults => ({

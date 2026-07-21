@@ -1,37 +1,43 @@
-# Cadmium foundation architecture
+# Cadmium architecture
 
 ## Runtime boundary
 
     React renderer
-      ├─ Screens and responsive shell
-      ├─ Bottom player presentation
-      └─ Provider-neutral normalized domain graph
+      ├── screens and responsive shell
+      ├── normalized domain graph
+      └── LocalLibraryProvider / PlaybackStore
               │
               ▼
-          MusicProvider
+        typed Tauri v2 commands
               │
-              ├─ EmptyMusicProvider (shipped first-launch state)
-              ├─ InMemoryMockProvider (tests/fixtures)
-              └─ future scanner / database / service adapters
+              ▼
+    Rust LibraryRepository
+      ├── SQLite migrations and transactions
+      ├── canonical watched-folder paths
+      ├── recursive metadata scan via Lofty
+      ├── artwork cache under app data
+      └── runtime asset-protocol scope
 
-src/domain/media.ts is the canonical renderer-facing contract. It defines normalized entities and stable identifiers for Track, Album, Artist, Playlist, QueueItem, PlaybackSource, NormalizedLibrary, and provider capabilities. The UI consumes maps plus explicit order arrays instead of provider-specific rows.
+`src/domain/media.ts` is the renderer-facing contract. Screens consume `NormalizedLibrary`, not SQLite rows or filesystem responses. Stable IDs are generated from normalized metadata or canonical paths before records are written.
 
-src/providers/music-provider.ts owns the replaceable MusicProvider boundary. A future adapter may scan folders, read a database, or call a service, but it must translate those raw shapes into the domain contract before the renderer sees them.
+## Rust repository
 
-## Desktop shell
+`src-tauri/src/library.rs` owns the SQLite schema and versioned migrations. Foreign keys are enabled, SQL values are parameterized, and scan reconciliation marks old records unavailable before applying the complete candidate set inside one transaction. The schema stores watched folders, artists, albums, tracks, join tables, recent plays, settings, queue, and one playback-state row. Audio data is never stored.
 
-- src/App.tsx owns route selection, provider loading/error state, the first-launch notice, and keyboard navigation (Ctrl+K).
-- src/components/ contains the persistent shell pieces: sidebar, context panel, bottom player, icons, and reusable empty states.
-- src/screens/ contains Home, Search, Library, Settings, and the three preview routes.
-- src/styles.css owns the responsive layout and the Cadmium visual system. The optional context panel is a real desktop column and disappears below the tablet breakpoint.
-- src-tauri/ is a minimal Tauri v2 host. It currently launches the frontend and exposes no music commands.
+`src-tauri/src/commands.rs` exposes only narrow typed commands for folder selection, watched-folder lifecycle, normalized library/search reads, settings, playback state, queue persistence, and recent-play recording. Every user-provided folder is canonicalized and checked as a directory. Runtime asset scope starts empty; Rust allows only canonical watched folders and exact indexed/artwork files before the renderer calls `convertFileSrc`.
 
-## Extension order
+Metadata failures fall back to a safe filename title and unknown artist so one damaged file does not abort a scan. Embedded art is signature-checked, size-limited, content-addressed, and stored as an app-local reference.
 
-1. Add a real provider adapter behind MusicProvider; keep filesystem/Tauri structs out of src/.
-2. Add persistence behind a repository boundary and hydrate the normalized graph.
-3. Add a queue/playback service that owns QueueItem transitions and emits player state.
-4. Connect scanning, artwork extraction, and error recovery to the existing loading/empty/error UI states.
-5. Add installer signing, update strategy, and Windows integration once the runtime surface is stable.
+## Renderer services
 
-The current UI deliberately does not imply that steps 1–4 exist.
+`src/providers/local-library-provider.ts` translates command DTOs to the domain graph. `src/playback/playback-store.ts` is a module singleton, so route changes cannot recreate the `HTMLAudioElement`. It restores persisted state without autoplay, owns transport/volume/queue/shuffle/repeat transitions, debounces playback persistence, records recent plays, and reports WebView decode failures as visible player state.
+
+The existing `EmptyMusicProvider` and in-memory provider remain useful for contract fixtures, but the desktop runtime selects `LocalLibraryProvider`. Outside Tauri, the browser build shows a truthful desktop-provider-unavailable state.
+
+## UI connection
+
+Home shows real counts and recent plays; Search queries Rust-backed normalized records; Library lists available and unavailable tracks plus watched-folder controls; Settings shows provider capabilities, folders, and persisted volume; the context panel and bottom player reflect the singleton queue/playback state. Mood Map, Mixes, and Rhythm remain explicit previews because no analysis or recommendation engine is implemented.
+
+## Verification seams
+
+Rust unit tests cover migrations, the legal deterministic WAV fixture, metadata fallback, scan/search, and missing-file reconciliation. Vitest covers normalized empty-provider contracts, queue/shuffle/repeat transitions, and no-autoplay playback restoration. Installer signing, updater behavior, external services, and codec support beyond the local WebView remain outside this pass.

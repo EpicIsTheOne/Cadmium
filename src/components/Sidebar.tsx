@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
+import type { ProviderDescriptor } from "../domain/media";
 
 export type ScreenId =
   | "home"
@@ -14,6 +15,7 @@ interface SidebarProps {
   activeScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   onAddMusic: () => void;
+  provider: ProviderDescriptor;
 }
 
 interface NavItem {
@@ -43,6 +45,7 @@ export function Sidebar({
   activeScreen,
   onNavigate,
   onAddMusic,
+  provider,
 }: SidebarProps) {
   const renderItems = (items: NavItem[]): ReactNode =>
     items.map((item) => (
@@ -104,8 +107,8 @@ export function Sidebar({
         </button>
         <div className="provider-pill">
           <span className="provider-dot" />
-          <span>Empty provider</span>
-          <span className="provider-status">ready</span>
+          <span>{provider.displayName}</span>
+          <span className="provider-status">{provider.status}</span>
         </div>
       </div>
     </aside>

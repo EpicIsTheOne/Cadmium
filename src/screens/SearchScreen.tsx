@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { NormalizedLibrary, SearchResults } from "../domain/media";
-import type { MusicProvider } from "../domain/media";
+import type { MusicProvider, NormalizedLibrary, SearchResults } from "../domain/media";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
+import { playbackStore } from "../playback/playback-store";
 
 interface SearchScreenProps {
   library: NormalizedLibrary;
@@ -10,11 +10,7 @@ interface SearchScreenProps {
   onAddMusic: () => void;
 }
 
-export function SearchScreen({
-  library,
-  provider,
-  onAddMusic,
-}: SearchScreenProps) {
+export function SearchScreen({ library, provider, onAddMusic }: SearchScreenProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -22,7 +18,6 @@ export function SearchScreen({
   useEffect(() => {
     let cancelled = false;
     const normalizedQuery = query.trim();
-
     if (!normalizedQuery) {
       setResults(null);
       setIsSearching(false);
@@ -35,6 +30,11 @@ export function SearchScreen({
     void provider.search(normalizedQuery).then((nextResults) => {
       if (!cancelled) {
         setResults(nextResults);
+        setIsSearching(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setResults({ trackIds: [], albumIds: [], artistIds: [], playlistIds: [] });
         setIsSearching(false);
       }
     });
@@ -80,7 +80,7 @@ export function SearchScreen({
           <span><span className="scope-dot scope-dot-active" />All media</span>
           <span><span className="scope-dot" />Provider: {provider.descriptor.displayName}</span>
           <span className="search-result-copy" aria-live="polite">
-            {isSearching ? "Searching..." : query ? resultCount + " matches" : "Waiting for a query"}
+            {isSearching ? "Searching..." : query ? `${resultCount} matches` : "Waiting for a query"}
           </span>
         </div>
       </section>
@@ -88,7 +88,7 @@ export function SearchScreen({
       {query && !isSearching && resultCount === 0 ? (
         <EmptyState
           actionLabel="Add music"
-          body={"There are no matches for “" + query + "” because the current provider has no records yet."}
+          body={`There are no matches for “${query}” in the normalized local library.`}
           icon="search"
           onAction={onAddMusic}
           title="Nothing answered back."
@@ -106,7 +106,7 @@ export function SearchScreen({
           <div>
             <span className="eyebrow">Start with a real source</span>
             <h2>Search becomes useful after import.</h2>
-            <p>Cadmium will search normalized records, not raw filesystem responses. Until then, this is intentionally a quiet room.</p>
+            <p>Cadmium searches normalized records, not raw filesystem responses. Until then, this is intentionally a quiet room.</p>
           </div>
           <button className="button button-secondary" onClick={onAddMusic} type="button">
             <Icon name="folder" size={16} />
@@ -116,19 +116,48 @@ export function SearchScreen({
       ) : null}
 
       {query && !isSearching && resultCount > 0 ? (
-        <section className="results-summary panel-surface">
-          <span className="eyebrow">Results</span>
-          <h2>{resultCount} records found</h2>
-          <p>
-            {results?.trackIds.length ?? 0} tracks · {results?.albumIds.length ?? 0} albums ·{" "}
-            {results?.artistIds.length ?? 0} artists · {results?.playlistIds.length ?? 0} playlists
-          </p>
-          <span className="results-note">
-            {Object.keys(library.tracksById).length === 0
-              ? "The shipped provider is empty, so production records will appear here after the scanner pass."
-              : "Results are sourced from the normalized provider graph."}
-          </span>
-        </section>
+        <>
+          <section className="results-summary panel-surface">
+            <span className="eyebrow">Results</span>
+            <h2>{resultCount} records found</h2>
+            <p>
+              {results?.trackIds.length ?? 0} tracks · {results?.albumIds.length ?? 0} albums ·{" "}
+              {results?.artistIds.length ?? 0} artists · {results?.playlistIds.length ?? 0} playlists
+            </p>
+            <span className="results-note">Results are sourced from the normalized provider graph.</span>
+          </section>
+          <section className="results-list panel-surface">
+            <span className="eyebrow">Matches</span>
+            {(results?.trackIds ?? []).map((trackId) => {
+              const track = library.tracksById[trackId];
+              if (!track) return null;
+              return (
+                <div className="result-row" key={track.id}>
+                  <div className="result-row-copy">
+                    <strong>{track.title}</strong>
+                    <small>{track.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") || "Unknown artist"}</small>
+                  </div>
+                  <button className="button button-ghost" disabled={!track.available} onClick={() => void playbackStore.playTrack(track.id)} type="button">
+                    <Icon name="play" size={14} />
+                    {track.available ? "Play" : "Unavailable"}
+                  </button>
+                  <button className="button button-secondary" disabled={!track.available} onClick={() => playbackStore.enqueue(track.id)} type="button">
+                    <Icon name="plus" size={14} />
+                    Queue
+                  </button>
+                </div>
+              );
+            })}
+            {(results?.albumIds ?? []).map((albumId) => {
+              const album = library.albumsById[albumId];
+              return album ? <div className="result-row result-row-muted" key={album.id}><div className="result-row-copy"><strong>{album.title}</strong><small>Album</small></div></div> : null;
+            })}
+            {(results?.artistIds ?? []).map((artistId) => {
+              const artist = library.artistsById[artistId];
+              return artist ? <div className="result-row result-row-muted" key={artist.id}><div className="result-row-copy"><strong>{artist.name}</strong><small>Artist</small></div></div> : null;
+            })}
+          </section>
+        </>
       ) : null}
     </div>
   );

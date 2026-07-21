@@ -5,6 +5,8 @@ import heroArt from "../assets/cadmium-hero.png";
 import type { ScreenId } from "../components/Sidebar";
 import { Icon } from "../components/Icon";
 import { EmptyState } from "../components/EmptyState";
+import type { NormalizedLibrary } from "../domain/media";
+import { playbackStore } from "../playback/playback-store";
 
 interface HomeScreenProps {
   counts: {
@@ -15,13 +17,19 @@ interface HomeScreenProps {
   };
   onAddMusic: () => void;
   onNavigate: (screen: ScreenId) => void;
+  library: NormalizedLibrary;
 }
 
 export function HomeScreen({
   counts,
   onAddMusic,
   onNavigate,
+  library,
 }: HomeScreenProps) {
+  const recentTracks = library.recentTrackIds
+    .map((trackId) => library.tracksById[trackId])
+    .filter((track): track is NonNullable<typeof track> => Boolean(track))
+    .slice(0, 5);
   return (
     <div className="screen-stack home-screen">
       <section
@@ -85,6 +93,30 @@ export function HomeScreen({
         </div>
       </section>
 
+      {recentTracks.length > 0 ? (
+        <section className="recent-panel panel-surface">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Listening trace</span>
+              <h2>Recent tracks</h2>
+            </div>
+            <span className="section-index">{recentTracks.length} / recent</span>
+          </div>
+          <div className="track-list compact-track-list">
+            {recentTracks.map((track) => (
+              <button className="track-row" key={track.id} onClick={() => void playbackStore.playTrack(track.id)} type="button">
+                <span className="track-row-index">{track.trackNumber ?? "·"}</span>
+                <span className="track-row-copy">
+                  <strong>{track.title}</strong>
+                  <small>{track.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") || "Unknown artist"}</small>
+                </span>
+                <span className="track-row-duration">{formatDuration(track.durationMs)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="home-lower-grid">
         <div className="foundation-panel panel-surface">
           <div className="section-heading">
@@ -116,7 +148,7 @@ export function HomeScreen({
               <div className="visual-card-copy">
                 <span>03 / response</span>
                 <strong>Make room for rhythm</strong>
-                <p>Playback, scanning, and persistence have their seams. They are not pretending to be here.</p>
+                <p>Playback, scanning, and persistence now have real seams; analysis can build on that signal later.</p>
               </div>
             </article>
           </div>
@@ -124,7 +156,7 @@ export function HomeScreen({
 
         <EmptyState
           actionLabel="Add your first source"
-          body="No history, recommendations, or mystery records have been invented. Give Cadmium a real source when the provider pass lands."
+          body="No recommendations or mystery records have been invented. Give Cadmium a real source and the local index will do the rest."
           compact
           icon="folder"
           onAction={onAddMusic}
@@ -133,4 +165,9 @@ export function HomeScreen({
       </section>
     </div>
   );
+}
+
+function formatDuration(durationMs: number) {
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
