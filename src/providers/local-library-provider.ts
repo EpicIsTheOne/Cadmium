@@ -210,6 +210,15 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     return this.call<boolean>("remove_watched_folder", { folderId });
   }
 
+  async getFavoriteTrackIds(): Promise<readonly TrackId[]> {
+    const ids = await this.call<string[]>("get_favorite_track_ids");
+    return ids.map(asTrackId);
+  }
+
+  async setTrackFavorite(trackId: TrackId, favorite: boolean): Promise<boolean> {
+    return this.call<boolean>("set_track_favorite", { trackId, favorite });
+  }
+
   async loadPlaybackSnapshot(): Promise<PlaybackSnapshot> {
     const [settings, playbackState, queue] = await Promise.all([
       this.call<BackendSettings>("get_settings"),

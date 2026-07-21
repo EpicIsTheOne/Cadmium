@@ -28,6 +28,8 @@ pub fn run() {
             commands::save_playback_state,
             commands::get_queue,
             commands::save_queue,
+            commands::get_favorite_track_ids,
+            commands::set_track_favorite,
             commands::record_recent_play,
             commands::get_discovery,
             commands::generate_ai_playlist,

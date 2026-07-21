@@ -11,7 +11,7 @@ import {
   LocalLibraryProvider,
   type WatchedFolder,
 } from "./providers/local-library-provider";
-import type { NormalizedLibrary } from "./domain/media";
+import type { NormalizedLibrary, TrackId } from "./domain/media";
 import { playbackStore } from "./playback/playback-store";
 import { HomeScreen } from "./screens/HomeScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
@@ -45,6 +45,7 @@ export default function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenId>("home");
   const [library, setLibrary] = useState<NormalizedLibrary | null>(null);
   const [folders, setFolders] = useState<readonly WatchedFolder[]>([]);
+  const [favoriteTrackIds, setFavoriteTrackIds] = useState<readonly TrackId[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [contextPanelOpen, setContextPanelOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -58,8 +59,12 @@ export default function App() {
       const nextLibrary = await provider.getLibrary();
       setLibrary(nextLibrary);
       if (provider instanceof LocalLibraryProvider) {
-        const nextFolders = await provider.getWatchedFolders();
+        const [nextFolders, nextFavorites] = await Promise.all([
+          provider.getWatchedFolders(),
+          provider.getFavoriteTrackIds(),
+        ]);
         setFolders(nextFolders);
+        setFavoriteTrackIds(nextFavorites);
         if (!playbackInitialized.current) {
           const snapshot = await provider.loadPlaybackSnapshot();
           playbackStore.initialize(nextLibrary, provider, snapshot);
@@ -169,6 +174,20 @@ export default function App() {
     }
   }, [loadLibrary, provider]);
 
+  const handleToggleFavorite = useCallback(async (trackId: TrackId) => {
+    if (!(provider instanceof LocalLibraryProvider)) return;
+    const wasFavorite = favoriteTrackIds.includes(trackId);
+    try {
+      await provider.setTrackFavorite(trackId, !wasFavorite);
+      setFavoriteTrackIds((current) => wasFavorite
+        ? current.filter((id) => id !== trackId)
+        : [trackId, ...current]);
+    } catch {
+      setNotice("Cadmium could not update that favorite.");
+      window.setTimeout(() => setNotice(null), 3200);
+    }
+  }, [favoriteTrackIds, provider]);
+
   const navigate = (screen: ScreenId) => {
     setActiveScreen(screen);
     if (screen === "search") {
@@ -277,7 +296,7 @@ export default function App() {
       {contextPanelOpen ? (
         <ContextPanel library={library ?? undefined} onClose={() => setContextPanelOpen(false)} onNavigate={navigate} />
       ) : null}
-      <BottomPlayer library={library ?? undefined} />
+      <BottomPlayer favoriteTrackIds={favoriteTrackIds} library={library ?? undefined} onToggleFavorite={handleToggleFavorite} />
 
       {isFolderDragActive ? <div className="folder-drop-overlay" role="status"><div><Icon name="folder" size={42} /><strong>Drop music folders to add them</strong><span>Cadmium will scan supported audio files recursively.</span></div></div> : null}
 

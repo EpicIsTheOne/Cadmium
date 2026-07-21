@@ -138,6 +138,16 @@ const MIGRATIONS: &[(i64, &str)] = &[
         CREATE INDEX idx_generated_playlist_tracks_track ON generated_playlist_tracks(track_id);
         "#,
     ),
+    (
+        4,
+        r#"
+        CREATE TABLE favorite_tracks (
+            track_id TEXT PRIMARY KEY NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            favorited_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_favorite_tracks_favorited_at ON favorite_tracks(favorited_at DESC);
+        "#,
+    ),
 ];
 
 #[derive(Debug)]
@@ -751,6 +761,41 @@ impl LibraryRepository {
         }
         tx.commit()?;
         self.get_queue()
+    }
+
+    pub fn get_favorite_track_ids(&self) -> LibraryResult<Vec<String>> {
+        let mut statement = self.conn.prepare(
+            "SELECT track_id FROM favorite_tracks ORDER BY favorited_at DESC, track_id",
+        )?;
+        let track_ids = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(track_ids)
+    }
+
+    pub fn set_track_favorite(&mut self, track_id: &str, favorite: bool) -> LibraryResult<bool> {
+        let track_id = track_id.trim();
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1)",
+            params![track_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LibraryError::NotFound(format!("track {track_id}")));
+        }
+        if favorite {
+            self.conn.execute(
+                "INSERT INTO favorite_tracks (track_id, favorited_at) VALUES (?1, ?2)
+                 ON CONFLICT(track_id) DO UPDATE SET favorited_at = excluded.favorited_at",
+                params![track_id, now_ms()],
+            )?;
+        } else {
+            self.conn.execute(
+                "DELETE FROM favorite_tracks WHERE track_id = ?1",
+                params![track_id],
+            )?;
+        }
+        Ok(favorite)
     }
 
     pub fn record_recent_play(&mut self, track_id: &str, position_ms: i64) -> LibraryResult<()> {
@@ -1769,7 +1814,7 @@ mod tests {
     fn migrations_create_the_persistent_schema() {
         let root = temp_root("migrations");
         let repository = LibraryRepository::open_in_memory(&root).unwrap();
-        assert_eq!(repository.schema_version().unwrap(), 3);
+        assert_eq!(repository.schema_version().unwrap(), 4);
         let tables: i64 = repository
             .conn
             .query_row(
@@ -1837,5 +1882,23 @@ mod tests {
         assert_eq!(radio.track_ids, vec![track_id.clone()]);
         let rhythm = repository.analyze_rhythm(&track_id).unwrap();
         assert!(rhythm.bpm >= 72 && rhythm.bpm <= 160);
+    }
+
+    #[test]
+    fn favorites_are_persistent_and_track_scoped() {
+        let root = temp_root("favorites");
+        let music = root.join("music");
+        fs::create_dir_all(&music).unwrap();
+        copy_fixture_tone(&music.join("Favorite.wav"));
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+        repository.add_watched_folder(music.to_str().unwrap()).unwrap();
+        let track_id = repository.get_library().unwrap().tracks[0].id.clone();
+
+        assert!(repository.get_favorite_track_ids().unwrap().is_empty());
+        assert!(repository.set_track_favorite(&track_id, true).unwrap());
+        assert_eq!(repository.get_favorite_track_ids().unwrap(), vec![track_id.clone()]);
+        assert!(!repository.set_track_favorite(&track_id, false).unwrap());
+        assert!(repository.get_favorite_track_ids().unwrap().is_empty());
+        assert!(repository.set_track_favorite("missing", true).is_err());
     }
 }
