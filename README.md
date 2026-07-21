@@ -10,7 +10,10 @@ Cadmium is a Windows-first desktop music workspace for a local collection. The d
 - Search normalized tracks, albums, and artists with parameterized SQLite queries.
 - Persist watched folders, settings, queue, current track, position, shuffle, repeat, volume, mute state, and recent plays under the platform app-data directory.
 - Play, pause, seek, volume, mute, previous, next, queue, shuffle, repeat off/all/one, artwork, recent tracks, and decode-error recovery from the shell-level player.
-- First launch remains an honest empty state. Mood Map, Mixes, and Rhythm are preview routes; they do not invent analysis or recommendations.
+- Build Stories and Lore from indexed metadata and actual recent plays.
+- Plot a local Mood Map, generate metadata-grounded Mixes, seed similarity Radio, and run playback-reactive Rhythm Mode.
+- Generate and persist private AI playlists with explainable local prompt ranking. No library data or prompts leave the device.
+- First launch remains an honest empty state; discovery features require real indexed music.
 
 ## Run it
 
@@ -40,5 +43,7 @@ The database is `cadmium.sqlite3` in Tauri’s app-data directory. Artwork is ca
 ## Supported formats and limits
 
 Lofty reads the formats above. Actual playback depends on the codecs exposed by the installed Windows WebView2/Media Foundation stack; an indexed file can therefore be unavailable to playback even when metadata was readable. Artwork is limited to verified JPEG, PNG, GIF, or WebP signatures and 4 MiB per image. The bundled deterministic WAV fixture under `src-tauri/tests/fixtures/` is test-only and is not shown to users.
+
+Mood and tempo values are explainable estimates derived from title and genre metadata. Rhythm visuals follow the real playback clock, but waveform-level BPM detection is not yet implemented. “AI playlists” are an on-device ranking engine, not a hosted generative model.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the runtime seams and [DEPENDENCY_LICENSES.md](DEPENDENCY_LICENSES.md) for declared licenses.

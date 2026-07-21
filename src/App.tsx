@@ -14,15 +14,19 @@ import type { NormalizedLibrary } from "./domain/media";
 import { playbackStore } from "./playback/playback-store";
 import { HomeScreen } from "./screens/HomeScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
-import { PreviewScreen } from "./screens/PreviewScreen";
+import { DiscoveryScreen } from "./screens/DiscoveryScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 
 const screenMeta: Record<ScreenId, { eyebrow: string; title: string }> = {
   home: { eyebrow: "Workspace / overview", title: "Home" },
   search: { eyebrow: "Workspace / search", title: "Search" },
+  stories: { eyebrow: "Explore / chapters", title: "Stories" },
+  lore: { eyebrow: "Explore / archive", title: "Lore" },
   mood: { eyebrow: "Explore / signal", title: "Mood Map" },
+  ai: { eyebrow: "Explore / director", title: "AI Playlists" },
   mixes: { eyebrow: "Explore / blends", title: "Mixes" },
+  radio: { eyebrow: "Explore / station", title: "Radio" },
   rhythm: { eyebrow: "Explore / motion", title: "Rhythm" },
   library: { eyebrow: "Your space / collection", title: "Library" },
   settings: { eyebrow: "Your space / control room", title: "Settings" },
@@ -183,10 +187,14 @@ export default function App() {
             provider={provider}
           />
         );
+      case "stories":
+      case "lore":
       case "mood":
+      case "ai":
       case "mixes":
+      case "radio":
       case "rhythm":
-        return <PreviewScreen kind={activeScreen} onNavigate={navigate} />;
+        return <DiscoveryScreen kind={activeScreen} library={library} provider={provider instanceof LocalLibraryProvider ? provider : null} />;
     }
   };
 

@@ -28,7 +28,11 @@ pub fn run() {
             commands::save_playback_state,
             commands::get_queue,
             commands::save_queue,
-            commands::record_recent_play
+            commands::record_recent_play,
+            commands::get_discovery,
+            commands::generate_ai_playlist,
+            commands::start_radio,
+            commands::analyze_rhythm
         ])
         .run(tauri::generate_context!())
         .expect("error while running Cadmium");

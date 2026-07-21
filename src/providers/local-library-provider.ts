@@ -13,6 +13,12 @@ import type {
 } from "../domain/media";
 import { emptyLibrary } from "../domain/media";
 import type {
+  DiscoveryData,
+  GeneratedPlaylist,
+  RadioSession,
+  RhythmProfile,
+} from "../domain/discovery";
+import type {
   PlaybackPersistence,
   PlaybackSnapshot,
   PlaybackStoreState,
@@ -250,6 +256,43 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
       positionMs: Math.max(0, Math.round(positionMs)),
     });
   }
+
+  async getDiscovery(): Promise<DiscoveryData> {
+    const data = await this.call<DiscoveryData>("get_discovery");
+    return mapTrackIds(data);
+  }
+
+  async generateAiPlaylist(prompt: string): Promise<GeneratedPlaylist> {
+    const result = await this.call<GeneratedPlaylist>("generate_ai_playlist", { prompt });
+    return { ...result, trackIds: result.trackIds.map(asTrackId) };
+  }
+
+  async startRadio(seedTrackId: TrackId): Promise<RadioSession> {
+    const result = await this.call<RadioSession>("start_radio", { seedTrackId });
+    return {
+      ...result,
+      seedTrackId: asTrackId(result.seedTrackId),
+      trackIds: result.trackIds.map(asTrackId),
+    };
+  }
+
+  async analyzeRhythm(trackId: TrackId): Promise<RhythmProfile> {
+    const result = await this.call<RhythmProfile>("analyze_rhythm", { trackId });
+    return { ...result, trackId: asTrackId(result.trackId) };
+  }
+}
+
+function mapTrackIds(data: DiscoveryData): DiscoveryData {
+  return {
+    stories: data.stories.map((story) => ({ ...story, trackIds: story.trackIds.map(asTrackId) })),
+    lore: data.lore,
+    moods: data.moods.map((mood) => ({ ...mood, trackId: asTrackId(mood.trackId) })),
+    mixes: data.mixes.map((mix) => ({ ...mix, trackIds: mix.trackIds.map(asTrackId) })),
+    generatedPlaylists: data.generatedPlaylists.map((playlist) => ({
+      ...playlist,
+      trackIds: playlist.trackIds.map(asTrackId),
+    })),
+  };
 }
 
 function mapLibrary(backend: BackendLibrary): NormalizedLibrary {

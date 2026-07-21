@@ -289,6 +289,18 @@ export class PlaybackStore {
     this.persistQueue();
   }
 
+  async playCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "playlist") {
+    const playable = trackIds.filter((trackId) => this.library.tracksById[trackId]?.available);
+    if (playable.length === 0) {
+      this.setState({ error: "This collection has no playable local tracks." });
+      return;
+    }
+    const queue = playable.map((trackId) => this.createQueueItem(trackId, source));
+    this.setState({ queue, queueIndex: 0 });
+    this.persistQueue();
+    await this.playTrack(playable[0]);
+  }
+
   removeFromQueue(queueId: string) {
     const removedIndex = this.state.queue.findIndex((item) => item.id === queueId);
     if (removedIndex < 0) {

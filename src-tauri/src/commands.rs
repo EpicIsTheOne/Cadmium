@@ -1,6 +1,7 @@
 use crate::library::{
-    LibraryRepository, NormalizedLibraryDto, PlaybackStateDto, QueueItemDto, ScanSummaryDto,
-    SearchResultsDto, SettingsDto, WatchedFolderDto,
+    DiscoveryDto, GeneratedPlaylistDto, LibraryRepository, NormalizedLibraryDto, PlaybackStateDto,
+    QueueItemDto, RadioSessionDto, RhythmProfileDto, ScanSummaryDto, SearchResultsDto, SettingsDto,
+    WatchedFolderDto,
 };
 use std::path::Path;
 use std::sync::Mutex;
@@ -284,5 +285,42 @@ pub fn record_recent_play(
 ) -> Result<(), String> {
     lock_repository(&state)?
         .record_recent_play(track_id.trim(), position_ms)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_discovery(state: State<'_, AppState>) -> Result<DiscoveryDto, String> {
+    lock_repository(&state)?
+        .get_discovery()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn generate_ai_playlist(
+    state: State<'_, AppState>,
+    prompt: String,
+) -> Result<GeneratedPlaylistDto, String> {
+    lock_repository(&state)?
+        .generate_playlist(&prompt)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn start_radio(
+    state: State<'_, AppState>,
+    seed_track_id: String,
+) -> Result<RadioSessionDto, String> {
+    lock_repository(&state)?
+        .start_radio(seed_track_id.trim())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn analyze_rhythm(
+    state: State<'_, AppState>,
+    track_id: String,
+) -> Result<RhythmProfileDto, String> {
+    lock_repository(&state)?
+        .analyze_rhythm(track_id.trim())
         .map_err(|error| error.to_string())
 }

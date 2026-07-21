@@ -2,7 +2,7 @@ use lofty::prelude::*;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -117,6 +117,25 @@ const MIGRATIONS: &[(i64, &str)] = &[
         CREATE INDEX idx_track_artists_artist ON track_artists(artist_id);
         CREATE INDEX idx_album_artists_artist ON album_artists(artist_id);
         CREATE INDEX idx_recent_plays_played_at ON recent_plays(played_at DESC);
+        "#,
+    ),
+    (
+        3,
+        r#"
+        CREATE TABLE generated_playlists (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE generated_playlist_tracks (
+            playlist_id TEXT NOT NULL REFERENCES generated_playlists(id) ON DELETE CASCADE,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (playlist_id, position)
+        );
+        CREATE INDEX idx_generated_playlist_tracks_track ON generated_playlist_tracks(track_id);
         "#,
     ),
 ];
@@ -270,6 +289,79 @@ pub struct ScanSummaryDto {
     pub tracks_indexed: usize,
     pub unavailable_count: usize,
     pub metadata_errors: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryDto {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub track_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreDto {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoodPointDto {
+    pub track_id: String,
+    pub energy: f32,
+    pub valence: f32,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MixDto {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub track_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryDto {
+    pub stories: Vec<StoryDto>,
+    pub lore: Vec<LoreDto>,
+    pub moods: Vec<MoodPointDto>,
+    pub mixes: Vec<MixDto>,
+    pub generated_playlists: Vec<GeneratedPlaylistDto>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedPlaylistDto {
+    pub id: String,
+    pub name: String,
+    pub rationale: String,
+    pub track_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RadioSessionDto {
+    pub seed_track_id: String,
+    pub explanation: String,
+    pub track_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RhythmProfileDto {
+    pub track_id: String,
+    pub bpm: u16,
+    pub beat_interval_ms: u32,
+    pub intensity: f32,
+    pub basis: String,
 }
 
 pub struct LibraryRepository {
@@ -679,6 +771,317 @@ impl LibraryRepository {
             [],
         )?;
         Ok(())
+    }
+
+    pub fn get_discovery(&self) -> LibraryResult<DiscoveryDto> {
+        let library = self.get_library()?;
+        let available = library
+            .tracks
+            .iter()
+            .filter(|track| track.available)
+            .collect::<Vec<_>>();
+        let moods = available
+            .iter()
+            .map(|track| mood_point(track))
+            .collect::<Vec<_>>();
+
+        let mut genres: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for track in &available {
+            let genre = track
+                .genre
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("Unsorted")
+                .trim()
+                .to_owned();
+            genres.entry(genre).or_default().push(track.id.clone());
+        }
+        let mut genre_groups = genres.into_iter().collect::<Vec<_>>();
+        genre_groups
+            .sort_by(|left, right| right.1.len().cmp(&left.1.len()).then(left.0.cmp(&right.0)));
+        let mut mixes = genre_groups
+            .iter()
+            .take(4)
+            .map(|(genre, ids)| MixDto {
+                id: stable_id("mix", genre),
+                title: format!("{genre} Current"),
+                description: format!(
+                    "{} real track(s) grouped from your library metadata.",
+                    ids.len()
+                ),
+                track_ids: ids.iter().take(30).cloned().collect(),
+            })
+            .collect::<Vec<_>>();
+        if !library.recent_track_ids.is_empty() {
+            mixes.insert(
+                0,
+                MixDto {
+                    id: "mix-recent-orbit".to_owned(),
+                    title: "Recent Orbit".to_owned(),
+                    description: "Your recently played tracks, gathered without inventing history."
+                        .to_owned(),
+                    track_ids: library.recent_track_ids.iter().take(30).cloned().collect(),
+                },
+            );
+        }
+        let calm_ids = moods
+            .iter()
+            .filter(|mood| mood.energy < 0.48)
+            .map(|mood| mood.track_id.clone())
+            .take(30)
+            .collect::<Vec<_>>();
+        if !calm_ids.is_empty() {
+            mixes.push(MixDto {
+                id: "mix-low-light".to_owned(),
+                title: "Low Light".to_owned(),
+                description: "A lower-energy mix inferred from titles and genre metadata."
+                    .to_owned(),
+                track_ids: calm_ids,
+            });
+        }
+
+        let top_genre = genre_groups
+            .first()
+            .map(|(name, ids)| (name.clone(), ids.len()));
+        let year_range: Option<(i64, i64)> =
+            available
+                .iter()
+                .filter_map(|track| track.year)
+                .fold(None, |range, year| {
+                    Some(match range {
+                        None => (year, year),
+                        Some((low, high)) => (low.min(year), high.max(year)),
+                    })
+                });
+        let recent = library
+            .recent_track_ids
+            .iter()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>();
+        let stories = vec![
+            StoryDto {
+                id: "story-library-arrival".to_owned(),
+                title: "The Library Arrives".to_owned(),
+                summary: format!(
+                    "{} tracks across {} albums form the opening chapter.",
+                    available.len(),
+                    library.albums.len()
+                ),
+                track_ids: available
+                    .iter()
+                    .take(8)
+                    .map(|track| track.id.clone())
+                    .collect(),
+            },
+            StoryDto {
+                id: "story-recent-signal".to_owned(),
+                title: "Recent Signal".to_owned(),
+                summary: if recent.is_empty() {
+                    "Play a track to begin this listening story.".to_owned()
+                } else {
+                    format!(
+                        "{} recently played tracks trace your latest route.",
+                        recent.len()
+                    )
+                },
+                track_ids: recent,
+            },
+        ];
+        let lore = vec![
+            LoreDto {
+                id: "lore-scale".to_owned(),
+                title: "Collected signal".to_owned(),
+                body: "Files indexed from your watched folders and currently available.".to_owned(),
+                value: format!("{} tracks", available.len()),
+            },
+            LoreDto {
+                id: "lore-genre".to_owned(),
+                title: "Dominant current".to_owned(),
+                body: "The most common embedded genre in the local library.".to_owned(),
+                value: top_genre
+                    .map(|(name, count)| format!("{name} · {count}"))
+                    .unwrap_or_else(|| "No genre metadata".to_owned()),
+            },
+            LoreDto {
+                id: "lore-years".to_owned(),
+                title: "Timeline".to_owned(),
+                body: "The release-year span found in embedded metadata.".to_owned(),
+                value: year_range
+                    .map(|(low, high)| {
+                        if low == high {
+                            low.to_string()
+                        } else {
+                            format!("{low}–{high}")
+                        }
+                    })
+                    .unwrap_or_else(|| "No year metadata".to_owned()),
+            },
+        ];
+        let mut generated_statement = self.conn.prepare(
+            "SELECT id, name, rationale FROM generated_playlists ORDER BY created_at DESC LIMIT 20",
+        )?;
+        let generated_rows = generated_statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut generated_playlists = Vec::new();
+        for (id, name, rationale) in generated_rows {
+            let mut tracks_statement = self.conn.prepare(
+                "SELECT track_id FROM generated_playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )?;
+            let track_ids = tracks_statement
+                .query_map(params![id], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            generated_playlists.push(GeneratedPlaylistDto {
+                id,
+                name,
+                rationale,
+                track_ids,
+            });
+        }
+        Ok(DiscoveryDto {
+            stories,
+            lore,
+            moods,
+            mixes,
+            generated_playlists,
+        })
+    }
+
+    pub fn generate_playlist(&mut self, raw_prompt: &str) -> LibraryResult<GeneratedPlaylistDto> {
+        let prompt = raw_prompt.trim();
+        if prompt.is_empty() || prompt.chars().count() > 200 {
+            return Err(LibraryError::InvalidInput(
+                "playlist prompt must contain 1 to 200 characters".to_owned(),
+            ));
+        }
+        let query = normalize_text(prompt);
+        let library = self.get_library()?;
+        let target = prompt_mood_target(&query);
+        let terms = query
+            .split_whitespace()
+            .filter(|term| term.len() > 2)
+            .collect::<Vec<_>>();
+        let mut ranked = library
+            .tracks
+            .iter()
+            .filter(|track| track.available)
+            .map(|track| {
+                let mood = mood_point(track);
+                let haystack = normalize_text(&format!(
+                    "{} {}",
+                    track.title,
+                    track.genre.as_deref().unwrap_or("")
+                ));
+                let term_score = terms
+                    .iter()
+                    .filter(|term| haystack.contains(**term))
+                    .count() as f32
+                    * 2.0;
+                let mood_score =
+                    1.0 - ((mood.energy - target.0).abs() + (mood.valence - target.1).abs()) / 2.0;
+                (track.id.clone(), term_score + mood_score)
+            })
+            .collect::<Vec<_>>();
+        ranked.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
+        let track_ids = ranked
+            .into_iter()
+            .take(25)
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        if track_ids.is_empty() {
+            return Err(LibraryError::InvalidInput(
+                "add music before generating a playlist".to_owned(),
+            ));
+        }
+        let id = stable_id("generated-playlist", &format!("{}-{}", prompt, now_ms()));
+        let name = prompt.chars().take(48).collect::<String>();
+        let rationale = "Ranked locally using prompt terms, embedded genre metadata, and explainable mood heuristics. No listening data left this device.".to_owned();
+        let tx = self.conn.transaction()?;
+        tx.execute("INSERT INTO generated_playlists (id, name, prompt, rationale, created_at) VALUES (?1, ?2, ?3, ?4, ?5)", params![id, name, prompt, rationale, now_ms()])?;
+        for (position, track_id) in track_ids.iter().enumerate() {
+            tx.execute("INSERT INTO generated_playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)", params![id, track_id, position as i64])?;
+        }
+        tx.commit()?;
+        Ok(GeneratedPlaylistDto {
+            id,
+            name,
+            rationale,
+            track_ids,
+        })
+    }
+
+    pub fn start_radio(&self, seed_track_id: &str) -> LibraryResult<RadioSessionDto> {
+        let library = self.get_library()?;
+        let seed = library
+            .tracks
+            .iter()
+            .find(|track| track.id == seed_track_id && track.available)
+            .ok_or_else(|| LibraryError::NotFound(format!("track {seed_track_id}")))?;
+        let seed_mood = mood_point(seed);
+        let seed_genre = normalize_text(seed.genre.as_deref().unwrap_or(""));
+        let mut ranked = library
+            .tracks
+            .iter()
+            .filter(|track| track.available && track.id != seed.id)
+            .map(|track| {
+                let mood = mood_point(track);
+                let genre_bonus = if !seed_genre.is_empty()
+                    && normalize_text(track.genre.as_deref().unwrap_or("")) == seed_genre
+                {
+                    2.0
+                } else {
+                    0.0
+                };
+                let artist_bonus = if track
+                    .artist_ids
+                    .iter()
+                    .any(|id| seed.artist_ids.contains(id))
+                {
+                    1.5
+                } else {
+                    0.0
+                };
+                let similarity = 2.0
+                    - (mood.energy - seed_mood.energy).abs()
+                    - (mood.valence - seed_mood.valence).abs();
+                (track.id.clone(), genre_bonus + artist_bonus + similarity)
+            })
+            .collect::<Vec<_>>();
+        ranked.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
+        let mut track_ids = vec![seed.id.clone()];
+        track_ids.extend(ranked.into_iter().take(39).map(|(id, _)| id));
+        Ok(RadioSessionDto {
+            seed_track_id: seed.id.clone(),
+            explanation:
+                "Seeded from shared genre and artist metadata, then ordered by mood proximity."
+                    .to_owned(),
+            track_ids,
+        })
+    }
+
+    pub fn analyze_rhythm(&self, track_id: &str) -> LibraryResult<RhythmProfileDto> {
+        let library = self.get_library()?;
+        let track = library
+            .tracks
+            .iter()
+            .find(|track| track.id == track_id && track.available)
+            .ok_or_else(|| LibraryError::NotFound(format!("track {track_id}")))?;
+        let mood = mood_point(track);
+        let bpm = (72.0 + mood.energy * 88.0).round() as u16;
+        Ok(RhythmProfileDto {
+            track_id: track.id.clone(),
+            bpm,
+            beat_interval_ms: 60_000 / bpm as u32,
+            intensity: mood.energy,
+            basis: "Estimated from embedded genre/title signals; live beat motion follows the real playback clock.".to_owned(),
+        })
     }
 
     #[cfg(test)]
@@ -1203,6 +1606,89 @@ pub fn normalize_text(value: &str) -> String {
     normalize_display(value).to_lowercase()
 }
 
+fn mood_point(track: &TrackDto) -> MoodPointDto {
+    let text = normalize_text(&format!(
+        "{} {}",
+        track.title,
+        track.genre.as_deref().unwrap_or("")
+    ));
+    let (mut energy, mut valence) = stable_mood_seed(&track.id);
+    for (word, energy_delta, valence_delta) in [
+        ("dance", 0.32, 0.18),
+        ("rock", 0.28, 0.02),
+        ("metal", 0.35, -0.18),
+        ("electronic", 0.24, 0.08),
+        ("party", 0.32, 0.3),
+        ("happy", 0.08, 0.38),
+        ("love", -0.03, 0.25),
+        ("calm", -0.35, 0.12),
+        ("ambient", -0.4, 0.04),
+        ("sleep", -0.42, -0.02),
+        ("sad", -0.18, -0.38),
+        ("dark", 0.02, -0.32),
+        ("rain", -0.22, -0.12),
+        ("night", -0.05, -0.08),
+        ("energy", 0.4, 0.12),
+    ] {
+        if text.contains(word) {
+            energy += energy_delta;
+            valence += valence_delta;
+        }
+    }
+    energy = energy.clamp(0.04, 0.96);
+    valence = valence.clamp(0.04, 0.96);
+    let label = match (energy >= 0.58, valence >= 0.55) {
+        (true, true) => "Energetic",
+        (true, false) => "Intense",
+        (false, true) => "Calm",
+        (false, false) => "Melancholic",
+    }
+    .to_owned();
+    MoodPointDto {
+        track_id: track.id.clone(),
+        energy,
+        valence,
+        label,
+    }
+}
+
+fn stable_mood_seed(value: &str) -> (f32, f32) {
+    let digest = Sha256::digest(value.as_bytes());
+    let energy = 0.34 + (digest[0] as f32 / 255.0) * 0.32;
+    let valence = 0.34 + (digest[1] as f32 / 255.0) * 0.32;
+    (energy, valence)
+}
+
+fn prompt_mood_target(prompt: &str) -> (f32, f32) {
+    let mut energy: f32 = 0.55;
+    let mut valence: f32 = 0.55;
+    if ["calm", "sleep", "focus", "rain", "quiet", "chill"]
+        .iter()
+        .any(|word| prompt.contains(word))
+    {
+        energy = 0.25;
+    }
+    if ["workout", "energy", "party", "dance", "hype", "fast"]
+        .iter()
+        .any(|word| prompt.contains(word))
+    {
+        energy = 0.88;
+    }
+    if ["sad", "dark", "melancholy", "angry", "breakup"]
+        .iter()
+        .any(|word| prompt.contains(word))
+    {
+        valence = 0.2;
+    }
+    if ["happy", "bright", "joy", "summer", "love"]
+        .iter()
+        .any(|word| prompt.contains(word))
+    {
+        valence = 0.84;
+    }
+    (energy, valence)
+}
+
 fn normalize_queue_source(value: &str) -> String {
     match value {
         "recommendation" | "playlist" => value.to_owned(),
@@ -1283,7 +1769,7 @@ mod tests {
     fn migrations_create_the_persistent_schema() {
         let root = temp_root("migrations");
         let repository = LibraryRepository::open_in_memory(&root).unwrap();
-        assert_eq!(repository.schema_version().unwrap(), 2);
+        assert_eq!(repository.schema_version().unwrap(), 3);
         let tables: i64 = repository
             .conn
             .query_row(
@@ -1324,5 +1810,32 @@ mod tests {
         assert_eq!(normalize_text("  The   Signal  "), "the signal");
         assert_eq!(parse_artist_credit("One; Two; One"), vec!["One", "Two"]);
         assert!(canonicalize_directory("").is_err());
+    }
+
+    #[test]
+    fn discovery_playlist_radio_and_rhythm_use_indexed_tracks() {
+        let root = temp_root("discovery");
+        let music = root.join("music");
+        fs::create_dir_all(&music).unwrap();
+        copy_fixture_tone(&music.join("Calm Night.wav"));
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+        repository
+            .add_watched_folder(music.to_str().unwrap())
+            .unwrap();
+        let track_id = repository.get_library().unwrap().tracks[0].id.clone();
+
+        let discovery = repository.get_discovery().unwrap();
+        assert_eq!(discovery.moods.len(), 1);
+        assert!(!discovery.stories.is_empty());
+        assert!(!discovery.mixes.is_empty());
+
+        let playlist = repository.generate_playlist("calm night").unwrap();
+        assert_eq!(playlist.track_ids, vec![track_id.clone()]);
+        assert!(repository.generate_playlist("   ").is_err());
+
+        let radio = repository.start_radio(&track_id).unwrap();
+        assert_eq!(radio.track_ids, vec![track_id.clone()]);
+        let rhythm = repository.analyze_rhythm(&track_id).unwrap();
+        assert!(rhythm.bpm >= 72 && rhythm.bpm <= 160);
     }
 }

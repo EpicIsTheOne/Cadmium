@@ -1,7 +1,7 @@
 import type { ProviderDescriptor } from "../domain/media";
 import { Icon, type IconName } from "./Icon";
 
-export type ScreenId = "home" | "search" | "mood" | "mixes" | "rhythm" | "library" | "settings";
+export type ScreenId = "home" | "search" | "stories" | "lore" | "mood" | "ai" | "mixes" | "radio" | "rhythm" | "library" | "settings";
 
 interface SidebarProps {
   activeScreen: ScreenId;
@@ -10,15 +10,16 @@ interface SidebarProps {
   provider: ProviderDescriptor;
 }
 
-const nav: Array<{ id: ScreenId; label: string; icon: IconName; preview?: boolean; divider?: boolean }> = [
+const nav: Array<{ id: ScreenId; label: string; icon: IconName; divider?: boolean }> = [
   { id: "home", label: "Home", icon: "home" },
   { id: "search", label: "Search", icon: "search" },
-  { id: "mixes", label: "Stories", icon: "library", preview: true },
-  { id: "mood", label: "Lore", icon: "mixes", preview: true },
-  { id: "mood", label: "Mood Map", icon: "mood", preview: true },
-  { id: "mixes", label: "Mixes", icon: "rhythm", preview: true },
-  { id: "rhythm", label: "Radio", icon: "rhythm", preview: true },
-  { id: "rhythm", label: "Rhythm", icon: "mixes", preview: true },
+  { id: "stories", label: "Stories", icon: "library" },
+  { id: "lore", label: "Lore", icon: "mixes" },
+  { id: "mood", label: "Mood Map", icon: "mood" },
+  { id: "ai", label: "AI Playlists", icon: "spark" },
+  { id: "mixes", label: "Mixes", icon: "rhythm" },
+  { id: "radio", label: "Radio", icon: "rhythm" },
+  { id: "rhythm", label: "Rhythm", icon: "mixes" },
   { id: "library", label: "Library", icon: "library", divider: true },
 ];
 
@@ -32,16 +33,15 @@ export function Sidebar({ activeScreen, onNavigate, onAddMusic, provider }: Side
       <nav aria-label="Primary navigation" className="sidebar-nav">
         {nav.map((item, index) => (
           <button
-            aria-current={activeScreen === item.id && (item.id === "home" || item.id === "search" || item.id === "library") ? "page" : undefined}
-            className={`nav-item ${item.divider ? "nav-divider" : ""} ${activeScreen === item.id && (item.id === "home" || item.id === "search" || item.id === "library") ? "is-active" : ""}`}
+            aria-current={activeScreen === item.id ? "page" : undefined}
+            className={`nav-item ${item.divider ? "nav-divider" : ""} ${activeScreen === item.id ? "is-active" : ""}`}
             key={`${item.label}-${index}`}
             onClick={() => onNavigate(item.id)}
-            title={item.preview ? `${item.label} preview` : item.label}
+            title={item.label}
             type="button"
           >
             <Icon name={item.icon} size={18} />
             <span>{item.label}</span>
-            {item.preview ? <small>Preview</small> : null}
           </button>
         ))}
       </nav>

@@ -22,9 +22,9 @@
 
 ## Rust repository
 
-`src-tauri/src/library.rs` owns the SQLite schema and versioned migrations. Foreign keys are enabled, SQL values are parameterized, and scan reconciliation marks old records unavailable before applying the complete candidate set inside one transaction. The schema stores watched folders, artists, albums, tracks, join tables, recent plays, settings, queue, and one playback-state row. Audio data is never stored.
+`src-tauri/src/library.rs` owns the SQLite schema and versioned migrations. Foreign keys are enabled, SQL values are parameterized, and scan reconciliation marks old records unavailable before applying the complete candidate set inside one transaction. The schema stores watched folders, artists, albums, tracks, join tables, recent plays, settings, queue, one playback-state row, and locally generated playlists. Audio data is never stored.
 
-`src-tauri/src/commands.rs` exposes only narrow typed commands for folder selection, watched-folder lifecycle, normalized library/search reads, settings, playback state, queue persistence, and recent-play recording. Every user-provided folder is canonicalized and checked as a directory. Runtime asset scope starts empty; Rust allows only canonical watched folders and exact indexed/artwork files before the renderer calls `convertFileSrc`.
+`src-tauri/src/commands.rs` exposes narrow typed commands for folder lifecycle, normalized library/search reads, persistence, discovery analysis, playlist generation, radio seeding, and rhythm profiles. Every user-provided folder is canonicalized and checked as a directory. Runtime asset scope starts empty; Rust allows only canonical watched folders and exact indexed/artwork files before the renderer calls `convertFileSrc`.
 
 Metadata failures fall back to a safe filename title and unknown artist so one damaged file does not abort a scan. Embedded art is signature-checked, size-limited, content-addressed, and stored as an app-local reference.
 
@@ -36,7 +36,7 @@ The existing `EmptyMusicProvider` and in-memory provider remain useful for contr
 
 ## UI connection
 
-Home shows real counts and recent plays; Search queries Rust-backed normalized records; Library lists available and unavailable tracks plus watched-folder controls; Settings shows provider capabilities, folders, and persisted volume; the context panel and bottom player reflect the singleton queue/playback state. Mood Map, Mixes, and Rhythm remain explicit previews because no analysis or recommendation engine is implemented.
+Home shows real counts and recent plays; Search queries Rust-backed normalized records; Library lists available and unavailable tracks plus watched-folder controls; Settings shows provider capabilities, folders, and persisted volume; the context panel and bottom player reflect the singleton queue/playback state. Stories, Lore, Mood Map, AI Playlists, Mixes, Radio, and Rhythm consume only typed `LocalLibraryProvider` discovery results.
 
 ## Verification seams
 
