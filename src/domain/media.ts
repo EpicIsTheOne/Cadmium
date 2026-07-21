@@ -100,7 +100,7 @@ export interface ProviderCapabilities {
   readonly canPersist: boolean;
 }
 
-export type ProviderStatus = "empty" | "mock" | "ready" | "unavailable";
+export type ProviderStatus = "empty" | "ready" | "unavailable";
 
 export interface ProviderDescriptor {
   readonly id: string;

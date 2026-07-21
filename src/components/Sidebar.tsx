@@ -51,7 +51,7 @@ export function Sidebar({ activeScreen, onNavigate, onAddMusic, provider }: Side
       </div>
       <div className="sidebar-profile">
         <button className="profile-avatar" onClick={onAddMusic} title="Add a music folder" type="button"><Icon name="plus" size={18} /></button>
-        <div><strong>Kage:305 <span>PRO</span></strong><small>{provider.displayName}</small></div>
+        <div><strong>Local Listener</strong><small>{provider.displayName}</small></div>
         <button aria-label="Settings" className="profile-settings" onClick={() => onNavigate("settings")} type="button"><Icon name="chevron-down" size={15} /></button>
       </div>
     </aside>

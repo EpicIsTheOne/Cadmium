@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "./components/Icon";
 import { BottomPlayer } from "./components/BottomPlayer";
 import { ContextPanel } from "./components/ContextPanel";
@@ -47,6 +48,7 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [contextPanelOpen, setContextPanelOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isFolderDragActive, setFolderDragActive] = useState(false);
   const [searchFocusVersion, setSearchFocusVersion] = useState(0);
   const playbackInitialized = useRef(false);
 
@@ -77,6 +79,42 @@ export default function App() {
   useEffect(() => {
     void loadLibrary();
   }, [loadLibrary]);
+
+  useEffect(() => {
+    if (!(provider instanceof LocalLibraryProvider)) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        setFolderDragActive(true);
+        return;
+      }
+      if (event.payload.type === "leave") {
+        setFolderDragActive(false);
+        return;
+      }
+      setFolderDragActive(false);
+      const paths = event.payload.paths;
+      void (async () => {
+        let added = 0;
+        let indexed = 0;
+        for (const path of paths) {
+          try {
+            const result = await provider.addMusicFolderPath(path);
+            added += 1;
+            indexed += result.summary.tracksIndexed;
+          } catch {
+            // Non-directory paths and inaccessible folders are rejected by Rust.
+          }
+        }
+        if (disposed) return;
+        setNotice(added ? `Added ${added} folder${added === 1 ? "" : "s"} and indexed ${indexed} track${indexed === 1 ? "" : "s"}.` : "No folders were added. Drop one or more accessible music folders.");
+        window.setTimeout(() => setNotice(null), 5200);
+        if (added) await loadLibrary();
+      })();
+    }).then((stop) => { if (disposed) stop(); else unlisten = stop; }).catch(() => undefined);
+    return () => { disposed = true; unlisten?.(); };
+  }, [loadLibrary, provider]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -211,7 +249,7 @@ export default function App() {
         <div className="workspace-scroll">
           <header className="topbar">
             <div className="page-heading">
-              {activeScreen === "home" ? <><h1>Good evening, Kage <Icon name="spark" size={19} /></h1><span>Let’s turn your world into music.</span></> : <><span className="breadcrumb">{meta.eyebrow}</span><h1>{meta.title}</h1></>}
+              {activeScreen === "home" ? <><h1>Good evening <Icon name="spark" size={19} /></h1><span>Let’s turn your world into music.</span></> : <><span className="breadcrumb">{meta.eyebrow}</span><h1>{meta.title}</h1></>}
             </div>
             <div className="topbar-actions">
               <button className="top-search-trigger" onClick={() => navigate("search")} type="button">
@@ -237,9 +275,11 @@ export default function App() {
       </main>
 
       {contextPanelOpen ? (
-        <ContextPanel library={library ?? undefined} onClose={() => setContextPanelOpen(false)} />
+        <ContextPanel library={library ?? undefined} onClose={() => setContextPanelOpen(false)} onNavigate={navigate} />
       ) : null}
       <BottomPlayer library={library ?? undefined} />
+
+      {isFolderDragActive ? <div className="folder-drop-overlay" role="status"><div><Icon name="folder" size={42} /><strong>Drop music folders to add them</strong><span>Cadmium will scan supported audio files recursively.</span></div></div> : null}
 
       {notice ? (
         <div aria-live="polite" className="toast" role="status">

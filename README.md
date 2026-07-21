@@ -4,7 +4,7 @@ Cadmium is a Windows-first desktop music workspace for a local collection. The d
 
 ## Implemented behavior
 
-- Choose, add, rescan, list, and remove watched folders. Paths are canonicalized and validated in Rust; removing a folder removes only Cadmium’s index records and never deletes music files.
+- Choose or drag-and-drop one or more music folders, then rescan, list, or remove them. Paths are canonicalized and validated in Rust; removing a folder removes only Cadmium’s index records and never deletes music files.
 - Index MP3, FLAC, WAV, OGG, M4A, and AAC files with normalized title, artist, album, album artist, track/disc number, year, genre, duration, file path, availability, and safe embedded artwork references.
 - Reconcile rescans transactionally. Files that disappear remain visible as unavailable until their record is removed with its watched folder or the file returns.
 - Search normalized tracks, albums, and artists with parameterized SQLite queries.
@@ -13,7 +13,7 @@ Cadmium is a Windows-first desktop music workspace for a local collection. The d
 - Build Stories and Lore from indexed metadata and actual recent plays.
 - Plot a local Mood Map, generate metadata-grounded Mixes, seed similarity Radio, and run playback-reactive Rhythm Mode.
 - Generate and persist private AI playlists with explainable local prompt ranking. No library data or prompts leave the device.
-- First launch remains an honest empty state; discovery features require real indexed music.
+- First launch remains an honest empty state; shipped screens render only indexed library, queue, and playback data rather than presentation fixtures.
 
 ## Run it
 

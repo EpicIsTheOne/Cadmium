@@ -178,6 +178,18 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     };
   }
 
+  async addMusicFolderPath(path: string) {
+    const summary = await this.call<BackendScanSummary>("add_watched_folder", { path });
+    const suffix = summary.metadataErrors
+      ? ` ${summary.metadataErrors} file(s) used safe fallback metadata.`
+      : "";
+    return {
+      status: "accepted" as const,
+      message: `Indexed ${summary.tracksIndexed} track(s) from the dropped folder.${suffix}`,
+      summary,
+    };
+  }
+
   async getWatchedFolders(): Promise<readonly WatchedFolder[]> {
     const folders = await this.call<BackendFolder[]>("list_watched_folders");
     return folders.map((folder) => ({
