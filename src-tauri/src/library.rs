@@ -156,6 +156,46 @@ const MIGRATIONS: &[(i64, &str)] = &[
         ALTER TABLE generated_playlists ADD COLUMN track_reasons_json TEXT NOT NULL DEFAULT '{}';
         "#,
     ),
+    (
+        6,
+        r#"
+        CREATE TABLE listening_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            event_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            position_ms INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            dj_session_id TEXT,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_listening_events_track_time ON listening_events(track_id, created_at DESC);
+        CREATE INDEX idx_listening_events_session ON listening_events(dj_session_id, created_at);
+        CREATE TABLE dj_sessions (
+            id TEXT PRIMARY KEY NOT NULL,
+            initial_prompt TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            ended_at INTEGER
+        );
+        CREATE TABLE dj_sets (
+            id TEXT PRIMARY KEY NOT NULL,
+            session_id TEXT NOT NULL REFERENCES dj_sessions(id) ON DELETE CASCADE,
+            prompt TEXT NOT NULL,
+            title TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            narration TEXT NOT NULL,
+            model TEXT,
+            generation_mode TEXT NOT NULL,
+            track_ids_json TEXT NOT NULL,
+            track_reasons_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_dj_sets_session_time ON dj_sets(session_id, created_at);
+        INSERT INTO settings (key, value) VALUES ('fish_voice_id', '') ON CONFLICT(key) DO NOTHING;
+        INSERT INTO settings (key, value) VALUES ('fish_voice_label', '') ON CONFLICT(key) DO NOTHING;
+        "#,
+    ),
 ];
 
 #[derive(Debug)]
@@ -763,6 +803,113 @@ impl LibraryRepository {
             params![if enabled { "1" } else { "0" }],
         )?;
         Ok(enabled)
+    }
+
+    pub fn get_fish_voice(&self) -> LibraryResult<(Option<String>, Option<String>)> {
+        let read = |key: &str| -> LibraryResult<Option<String>> {
+            Ok(self
+                .conn
+                .query_row(
+                    "SELECT value FROM settings WHERE key = ?1",
+                    params![key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .filter(|value| !value.trim().is_empty()))
+        };
+        Ok((read("fish_voice_id")?, read("fish_voice_label")?))
+    }
+
+    pub fn set_fish_voice(&mut self, voice_id: &str, voice_label: &str) -> LibraryResult<()> {
+        let voice_id = voice_id.trim();
+        let voice_label = voice_label.trim();
+        if voice_id.is_empty()
+            || voice_id.chars().count() > 160
+            || voice_label.is_empty()
+            || voice_label.chars().count() > 120
+        {
+            return Err(LibraryError::InvalidInput(
+                "invalid Fish Audio voice selection".to_owned(),
+            ));
+        }
+        let tx = self.conn.transaction()?;
+        for (key, value) in [
+            ("fish_voice_id", voice_id),
+            ("fish_voice_label", voice_label),
+        ] {
+            tx.execute("INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, value])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn record_listening_event(
+        &mut self,
+        track_id: &str,
+        event_type: &str,
+        source: &str,
+        position_ms: i64,
+        duration_ms: i64,
+        session_id: Option<&str>,
+    ) -> LibraryResult<()> {
+        let event_type = event_type.trim();
+        if !matches!(
+            event_type,
+            "play" | "complete" | "skip" | "seek_away" | "favorite"
+        ) {
+            return Err(LibraryError::InvalidInput(
+                "invalid listening event".to_owned(),
+            ));
+        }
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1)",
+            params![track_id.trim()],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LibraryError::NotFound(format!("track {track_id}")));
+        }
+        self.conn.execute(
+            "INSERT INTO listening_events (track_id, event_type, source, position_ms, duration_ms, dj_session_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![track_id.trim(), event_type, source.trim().chars().take(32).collect::<String>(), position_ms.max(0), duration_ms.max(0), session_id.map(str::trim), now_ms()],
+        )?;
+        self.conn.execute("DELETE FROM listening_events WHERE id NOT IN (SELECT id FROM listening_events ORDER BY created_at DESC LIMIT 5000)", [])?;
+        Ok(())
+    }
+
+    pub fn listening_signals(&self) -> LibraryResult<serde_json::Value> {
+        let mut statement = self.conn.prepare(
+            "SELECT track_id,
+                    SUM(CASE WHEN event_type = 'play' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN event_type = 'complete' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN event_type = 'skip' THEN 1 ELSE 0 END),
+                    MAX(created_at)
+             FROM listening_events GROUP BY track_id ORDER BY MAX(created_at) DESC LIMIT 250",
+        )?;
+        let tracks = statement.query_map([], |row| Ok(serde_json::json!({
+            "trackId": row.get::<_, String>(0)?, "plays": row.get::<_, i64>(1)?, "completions": row.get::<_, i64>(2)?, "skips": row.get::<_, i64>(3)?, "lastEventAt": row.get::<_, i64>(4)?
+        })))?.collect::<Result<Vec<_>, _>>()?;
+        let favorites = self.get_favorite_track_ids()?;
+        Ok(serde_json::json!({"tracks":tracks, "favoriteTrackIds":favorites}))
+    }
+
+    pub fn save_dj_set(&mut self, set: &crate::dj::DjSetDto, prompt: &str) -> LibraryResult<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("INSERT INTO dj_sessions (id, initial_prompt, state, created_at) VALUES (?1, ?2, 'active', ?3) ON CONFLICT(id) DO UPDATE SET state = 'active', ended_at = NULL", params![set.session_id, prompt.trim(), set.created_at])?;
+        tx.execute(
+            "INSERT INTO dj_sets (id, session_id, prompt, title, rationale, narration, model, generation_mode, track_ids_json, track_reasons_json, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![set.id, set.session_id, prompt.trim(), set.title, set.rationale, set.narration, set.model, set.generation_mode, serde_json::to_string(&set.track_ids).map_err(|error| LibraryError::Metadata(error.to_string()))?, serde_json::to_string(&set.track_reasons).map_err(|error| LibraryError::Metadata(error.to_string()))?, set.created_at],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn end_dj_session(&mut self, session_id: &str) -> LibraryResult<()> {
+        self.conn.execute(
+            "UPDATE dj_sessions SET state = 'ended', ended_at = ?2 WHERE id = ?1",
+            params![session_id.trim(), now_ms()],
+        )?;
+        Ok(())
     }
 
     pub fn get_playback_state(&self) -> LibraryResult<PlaybackStateDto> {
@@ -1923,7 +2070,7 @@ fn prompt_mood_target(prompt: &str) -> (f32, f32) {
 
 fn normalize_queue_source(value: &str) -> String {
     match value {
-        "recommendation" | "playlist" => value.to_owned(),
+        "recommendation" | "playlist" | "dj" => value.to_owned(),
         _ => "user".to_owned(),
     }
 }
@@ -2001,7 +2148,7 @@ mod tests {
     fn migrations_create_the_persistent_schema() {
         let root = temp_root("migrations");
         let repository = LibraryRepository::open_in_memory(&root).unwrap();
-        assert_eq!(repository.schema_version().unwrap(), 5);
+        assert_eq!(repository.schema_version().unwrap(), 6);
         let tables: i64 = repository
             .conn
             .query_row(
@@ -2094,6 +2241,55 @@ mod tests {
         assert!(!repository.set_track_favorite(&track_id, false).unwrap());
         assert!(repository.get_favorite_track_ids().unwrap().is_empty());
         assert!(repository.set_track_favorite("missing", true).is_err());
+    }
+
+    #[test]
+    fn dj_sets_and_real_listening_signals_persist() {
+        let root = temp_root("dj-signals");
+        let music = root.join("music");
+        fs::create_dir_all(&music).unwrap();
+        copy_fixture_tone(&music.join("Pulse.wav"));
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+        repository
+            .add_watched_folder(music.to_str().unwrap())
+            .unwrap();
+        let track_id = repository.get_library().unwrap().tracks[0].id.clone();
+        repository
+            .record_listening_event(&track_id, "play", "dj", 0, 1000, Some("session-1"))
+            .unwrap();
+        repository
+            .record_listening_event(&track_id, "complete", "dj", 1000, 1000, Some("session-1"))
+            .unwrap();
+        let signals = repository.listening_signals().unwrap();
+        assert_eq!(
+            signals
+                .pointer("/tracks/0/plays")
+                .and_then(serde_json::Value::as_i64),
+            Some(1)
+        );
+        let set = crate::dj::DjSetDto {
+            id: "set-1".to_owned(),
+            session_id: "session-1".to_owned(),
+            title: "Pulse Set".to_owned(),
+            rationale: "Test".to_owned(),
+            narration: "Here comes Pulse.".to_owned(),
+            model: Some("gpt-5.6-luna".to_owned()),
+            generation_mode: "luna".to_owned(),
+            track_ids: vec![track_id.clone()],
+            track_reasons: vec![TrackReasonDto {
+                track_id,
+                reason: "Signal".to_owned(),
+            }],
+            fallback_reason: None,
+            created_at: now_ms(),
+        };
+        repository.save_dj_set(&set, "keep it moving").unwrap();
+        let count: i64 = repository
+            .conn
+            .query_row("SELECT COUNT(*) FROM dj_sets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+        repository.end_dj_session("session-1").unwrap();
     }
 
     #[test]

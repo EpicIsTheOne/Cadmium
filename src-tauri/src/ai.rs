@@ -52,6 +52,15 @@ pub struct AiPlaylistDraft {
     pub tracks: Vec<AiTrackChoice>,
 }
 
+#[derive(Clone, Debug)]
+pub struct AiDjDraft {
+    pub set_title: String,
+    pub rationale: String,
+    pub narration: String,
+    pub model: String,
+    pub tracks: Vec<AiTrackChoice>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct AiTrackChoice {
     pub id: String,
@@ -63,6 +72,15 @@ pub struct AiTrackChoice {
 struct AiModelOutput {
     name: String,
     rationale: String,
+    tracks: Vec<AiTrackChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiDjModelOutput {
+    set_title: String,
+    rationale: String,
+    narration: String,
     tracks: Vec<AiTrackChoice>,
 }
 
@@ -189,6 +207,28 @@ impl AiService {
         result
     }
 
+    pub fn generate_dj(
+        &self,
+        prompt: &str,
+        catalog: &[AiCatalogTrack],
+        listening_signals: &Value,
+    ) -> Result<AiDjDraft, AiError> {
+        if !self.cloud_enabled() {
+            return Err(AiError::SignedOut("Codex curation is disabled".to_owned()));
+        }
+        self.cancel_requested.store(false, Ordering::SeqCst);
+        let cwd = self.cwd.clone();
+        self.with_client(|client| {
+            client.generate_dj(
+                prompt,
+                catalog,
+                listening_signals,
+                &cwd,
+                &self.cancel_requested,
+            )
+        })
+    }
+
     fn with_client<T>(
         &self,
         operation: impl FnOnce(&mut CodexClient) -> Result<T, AiError>,
@@ -222,7 +262,7 @@ struct CodexClient {
 
 impl CodexClient {
     fn start() -> Result<Self, AiError> {
-        let mut command = Command::new("codex");
+        let mut command = Command::new(resolve_codex_executable());
         command
             .args(["app-server", "--stdio"])
             .stdin(Stdio::piped())
@@ -288,22 +328,7 @@ impl CodexClient {
             REQUEST_TIMEOUT,
         )?;
         let account_value = account.get("account").filter(|value| !value.is_null());
-        let models_value = self
-            .request("model/list", json!({}), REQUEST_TIMEOUT)
-            .unwrap_or_else(|_| json!({"data": []}));
-        let models = models_value
-            .get("data")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|model| {
-                model
-                    .get("id")
-                    .or_else(|| model.get("model"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .collect::<Vec<_>>();
+        let models = self.list_models().unwrap_or_default();
         let connected = account_value.is_some();
         Ok(AiStatusDto {
             state: if connected { "connected" } else { "signedOut" }.to_owned(),
@@ -321,6 +346,43 @@ impl CodexClient {
                 "Connect ChatGPT through Codex for AI curation, or generate locally.".to_owned()
             },
         })
+    }
+
+    fn list_models(&mut self) -> Result<Vec<String>, AiError> {
+        let mut cursor: Option<String> = None;
+        let mut models = Vec::new();
+        for _ in 0..8 {
+            let value = self.request(
+                "model/list",
+                json!({"cursor": cursor, "limit": 100}),
+                REQUEST_TIMEOUT,
+            )?;
+            models.extend(
+                value
+                    .get("data")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|model| {
+                        model
+                            .get("id")
+                            .or_else(|| model.get("model"))
+                            .or_else(|| model.get("slug"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                    }),
+            );
+            cursor = value
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        models.sort();
+        models.dedup();
+        Ok(models)
     }
 
     fn start_login(&mut self) -> Result<AiLoginDto, AiError> {
@@ -405,6 +467,62 @@ impl CodexClient {
         Ok(AiPlaylistDraft {
             name: output.name.trim().chars().take(80).collect(),
             rationale: output.rationale.trim().chars().take(600).collect(),
+            model,
+            tracks: output.tracks,
+        })
+    }
+
+    fn generate_dj(
+        &mut self,
+        prompt: &str,
+        catalog: &[AiCatalogTrack],
+        listening_signals: &Value,
+        cwd: &str,
+        cancel: &AtomicBool,
+    ) -> Result<AiDjDraft, AiError> {
+        let status = self.status()?;
+        if !status.connected {
+            return Err(AiError::SignedOut("Codex is not signed in".to_owned()));
+        }
+        let model = status.models.iter().find(|model| model.as_str() == "gpt-5.6-luna").cloned().ok_or_else(|| AiError::Missing("GPT-5.6 Luna is unavailable. Update Codex CLI to 0.144.0 or newer and confirm Luna access for this account.".to_owned()))?;
+        let developer_instructions = "You are Cadmium's local-library DJ. Do not use tools, browse, execute commands, or access files. Return only strict JSON with setTitle, rationale, narration, and tracks. tracks is 4 to 6 objects with id and reason. Use only supplied IDs, avoid duplicates, and ground every claim in supplied metadata. narration is 1 to 3 short expressive radio-host sentences and must not invent facts.";
+        let thread = self.request(
+            "thread/start",
+            json!({
+                "cwd": cwd, "ephemeral": true, "approvalPolicy": "never", "sandbox": "read-only",
+                "model": model, "developerInstructions": developer_instructions
+            }),
+            REQUEST_TIMEOUT,
+        )?;
+        let thread_id = thread
+            .pointer("/thread/id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AiError::Protocol("Codex returned no thread id".to_owned()))?
+            .to_owned();
+        let input = json!({"request":prompt, "setSize":{"minimum":4,"maximum":6}, "listeningSignals":listening_signals, "catalog":catalog});
+        let turn = self.request("turn/start", json!({
+            "threadId":thread_id, "input":[{"type":"text","text":input.to_string()}], "effort":"low", "cwd":cwd
+        }), REQUEST_TIMEOUT)?;
+        let turn_id = turn
+            .pointer("/turn/id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AiError::Protocol("Codex returned no turn id".to_owned()))?
+            .to_owned();
+        let text = self.collect_turn(&thread_id, &turn_id, cancel)?;
+        let output: AiDjModelOutput = serde_json::from_str(extract_json_object(&text))
+            .map_err(|_| AiError::Protocol("Luna returned malformed DJ output".to_owned()))?;
+        if output.set_title.trim().is_empty()
+            || output.narration.trim().is_empty()
+            || output.tracks.is_empty()
+        {
+            return Err(AiError::Protocol(
+                "Luna returned an incomplete DJ set".to_owned(),
+            ));
+        }
+        Ok(AiDjDraft {
+            set_title: output.set_title.trim().chars().take(80).collect(),
+            rationale: output.rationale.trim().chars().take(500).collect(),
+            narration: output.narration.trim().chars().take(600).collect(),
             model,
             tracks: output.tracks,
         })
@@ -570,6 +688,27 @@ impl CodexClient {
     }
 }
 
+fn resolve_codex_executable() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os("CADMIUM_CODEX_PATH")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_file())
+    {
+        return path;
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let winget = std::path::PathBuf::from(local)
+            .join("Microsoft")
+            .join("WinGet")
+            .join("Packages")
+            .join("OpenAI.Codex_Microsoft.Winget.Source_8wekyb3d8bbwe")
+            .join("codex-x86_64-pc-windows-msvc.exe");
+        if winget.is_file() {
+            return winget;
+        }
+    }
+    std::path::PathBuf::from("codex")
+}
+
 impl Drop for CodexClient {
     fn drop(&mut self) {
         self.shutdown();
@@ -586,8 +725,20 @@ fn required_string(value: &Value, key: &str) -> Result<String, AiError> {
 }
 
 fn parse_model_output(raw: &str) -> Result<AiModelOutput, AiError> {
+    let json_text = extract_json_object(raw);
+    let output: AiModelOutput = serde_json::from_str(json_text)
+        .map_err(|_| AiError::Protocol("Codex returned malformed playlist data".to_owned()))?;
+    if output.name.trim().is_empty() || output.tracks.is_empty() {
+        return Err(AiError::Protocol(
+            "Codex returned an empty playlist".to_owned(),
+        ));
+    }
+    Ok(output)
+}
+
+fn extract_json_object(raw: &str) -> &str {
     let trimmed = raw.trim();
-    let json_text = if trimmed.starts_with("```") {
+    if trimmed.starts_with("```") {
         trimmed
             .trim_start_matches("```json")
             .trim_start_matches("```")
@@ -597,15 +748,7 @@ fn parse_model_output(raw: &str) -> Result<AiModelOutput, AiError> {
         &trimmed[start..=end]
     } else {
         trimmed
-    };
-    let output: AiModelOutput = serde_json::from_str(json_text)
-        .map_err(|_| AiError::Protocol("Codex returned malformed playlist data".to_owned()))?;
-    if output.name.trim().is_empty() || output.tracks.is_empty() {
-        return Err(AiError::Protocol(
-            "Codex returned an empty playlist".to_owned(),
-        ));
     }
-    Ok(output)
 }
 
 fn sanitize_error(message: &str) -> String {
@@ -636,6 +779,14 @@ fn open_login_url(url: &str) -> Result<(), AiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dj_output_requires_structured_commentary_and_tracks() {
+        let raw = r#"{"setTitle":"Night Signal","rationale":"Recent favorites","narration":"[calm] Let us ease into this one.","tracks":[{"id":"track-1","reason":"Fits the signal"}]}"#;
+        let output: AiDjModelOutput = serde_json::from_str(extract_json_object(raw)).unwrap();
+        assert_eq!(output.set_title, "Night Signal");
+        assert_eq!(output.tracks[0].id, "track-1");
+    }
 
     #[test]
     fn parses_strict_or_fenced_playlist_json() {

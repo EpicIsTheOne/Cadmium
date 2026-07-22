@@ -16,5 +16,7 @@ This is a human-readable list of the direct runtime/build dependencies used by t
 | walkdir | Recursive watched-folder traversal | Unlicense/MIT |
 | sha2 | Stable IDs and content-addressed artwork names | MIT OR Apache-2.0 |
 | base64 | Test-only WAV fixture decoding | MIT OR Apache-2.0 |
+| fish-audio-tts-toolkit | Fish voice search, delivery tagging, and TTS request logic | MIT |
+| fish-audio | Toolkit realtime module dependency (realtime path disabled in Cadmium) | MIT |
 
 No third-party image, font, icon, or album-art files are bundled. `src/assets/cadmium-hero.png` is an original Cadmium visual; the neighboring SVGs are authored in this repository. The deterministic WAV fixture is legal test data and is not user-visible.

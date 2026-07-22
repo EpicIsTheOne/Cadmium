@@ -40,6 +40,12 @@ Home shows real counts and recent plays; Search queries Rust-backed normalized r
 
 AI Playlist Director uses a single managed `codex app-server --stdio` process and the machine's existing Codex/ChatGPT OAuth session. The renderer receives only sanitized connection state. Generation runs in ephemeral read-only threads with approvals and tools declined, sends a bounded metadata catalog without filesystem paths, validates returned track IDs locally, and falls back to deterministic local ranking when Codex is unavailable. Generated playlists are persisted in SQLite and exposed through the normalized playlist graph.
 
+## AI DJ and voice runtime
+
+Cadmium DJ uses the managed app-server but requires the exact `gpt-5.6-luna` catalog ID. DJ sessions and sets are persisted separately from ordinary playlists, while `listening_events` stores actual play, completion, skip, seek-away, and favorite events. The renderer snapshots the ordinary queue before DJ takeover and restores it when the session ends.
+
+Fish voice search and deterministic delivery tagging come from the pinned `fish-audio-tts-toolkit` sources embedded at Rust compile time. Rust materializes an app-data-only Node worker and communicates through JSONL stdio; no localhost service is exposed. The Fish key is read from Windows Credential Manager and passed only to the child process environment. Generated MP3 narration is content-addressed, size-bounded, scoped through Tauri's asset protocol, and played by a separate media element while music is ducked.
+
 ## Verification seams
 
-Rust unit tests cover migrations, the legal deterministic WAV fixture, metadata fallback, scan/search, and missing-file reconciliation. Vitest covers normalized empty-provider contracts, queue/shuffle/repeat transitions, and no-autoplay playback restoration. Installer signing, updater behavior, external services, and codec support beyond the local WebView remain outside this pass.
+Rust unit tests cover migrations, the legal deterministic WAV fixture, metadata fallback, scan/search, missing-file reconciliation, structured DJ output, listening signals, and DJ persistence. Vitest covers normalized empty-provider contracts, queue/shuffle/repeat transitions, and no-autoplay playback restoration. Fish/Luna live availability, installer signing, updater behavior, and codec support beyond the local WebView require packaged-app verification.

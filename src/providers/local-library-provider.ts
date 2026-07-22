@@ -25,6 +25,7 @@ import type {
   PlaybackSnapshot,
   PlaybackStoreState,
 } from "../playback/playback-store";
+import type { DjNarration, DjSet, DjStatus, FishVoice } from "../domain/dj";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -350,6 +351,44 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     const result = await this.call<RhythmProfile>("analyze_rhythm", { trackId });
     return { ...result, trackId: asTrackId(result.trackId) };
   }
+
+  async getDjStatus(): Promise<DjStatus> {
+    return this.call<DjStatus>("get_dj_status");
+  }
+
+  async setFishCredential(apiKey: string): Promise<void> {
+    await this.call<void>("set_fish_credential", { apiKey });
+  }
+
+  async clearFishCredential(): Promise<void> {
+    await this.call<void>("clear_fish_credential");
+  }
+
+  async searchFishVoices(query: string): Promise<readonly FishVoice[]> {
+    return this.call<FishVoice[]>("search_fish_voices", { query });
+  }
+
+  async selectFishVoice(voiceId: string, voiceLabel: string): Promise<void> {
+    await this.call<void>("select_fish_voice", { voiceId, voiceLabel });
+  }
+
+  async generateDjSet(sessionId: string | null, prompt: string): Promise<DjSet> {
+    const set = await this.call<DjSet>("generate_dj_set", { sessionId, prompt });
+    return { ...set, trackIds: set.trackIds.map(asTrackId), trackReasons: set.trackReasons.map((item) => ({ ...item, trackId: asTrackId(item.trackId) })) };
+  }
+
+  async synthesizeDjNarration(text: string): Promise<DjNarration> {
+    const narration = await this.call<Omit<DjNarration, "src"> & { path: string }>("synthesize_dj_narration", { text });
+    return { ...narration, src: convertFileSrc(narration.path) };
+  }
+
+  async recordListeningEvent(trackId: TrackId, eventType: "play" | "complete" | "skip" | "seek_away" | "favorite", source: string, positionMs: number, durationMs: number, sessionId: string | null): Promise<void> {
+    await this.call<void>("record_listening_event", { trackId, eventType, source, positionMs: Math.max(0, Math.round(positionMs)), durationMs: Math.max(0, Math.round(durationMs)), sessionId });
+  }
+
+  async endDjSession(sessionId: string): Promise<void> {
+    await this.call<void>("end_dj_session", { sessionId });
+  }
 }
 
 function mapTrackIds(data: DiscoveryData): DiscoveryData {
@@ -444,7 +483,7 @@ function mapQueueItem(item: BackendQueueItem): QueueItem {
 }
 
 function normalizeQueueSource(value: string): QueueItem["source"] {
-  if (value === "recommendation" || value === "playlist") {
+  if (value === "recommendation" || value === "playlist" || value === "dj") {
     return value;
   }
   return "user";

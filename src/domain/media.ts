@@ -72,7 +72,7 @@ export interface QueueItem {
   readonly id: string;
   readonly trackId: TrackId;
   readonly addedAt: string;
-  readonly source: "user" | "recommendation" | "playlist";
+  readonly source: "user" | "recommendation" | "playlist" | "dj";
 }
 
 export interface NormalizedLibrary {

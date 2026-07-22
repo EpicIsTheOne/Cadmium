@@ -1,5 +1,6 @@
 mod ai;
 mod commands;
+mod dj;
 mod library;
 
 use tauri::Manager;
@@ -41,7 +42,16 @@ pub fn run() {
             commands::cancel_ai_generation,
             commands::delete_generated_playlist,
             commands::start_radio,
-            commands::analyze_rhythm
+            commands::analyze_rhythm,
+            commands::get_dj_status,
+            commands::set_fish_credential,
+            commands::clear_fish_credential,
+            commands::search_fish_voices,
+            commands::select_fish_voice,
+            commands::generate_dj_set,
+            commands::synthesize_dj_narration,
+            commands::record_listening_event,
+            commands::end_dj_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running Cadmium");

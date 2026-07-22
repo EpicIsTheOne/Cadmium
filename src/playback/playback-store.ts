@@ -6,6 +6,7 @@ import type {
   TrackId,
 } from "../domain/media";
 import { nextQueueIndex, previousQueueIndex, type RepeatMode } from "./queue";
+import type { QueueSnapshot } from "../domain/dj";
 
 export interface PlaybackStoreState {
   readonly currentTrackId: TrackId | null;
@@ -42,6 +43,7 @@ export interface PlaybackPersistence {
   savePlaybackState(state: PlaybackStoreState): Promise<void>;
   saveSettings(settings: { volume: number; muted: boolean }): Promise<void>;
   recordRecentPlay(trackId: TrackId, positionMs: number): Promise<void>;
+  recordListeningEvent?(trackId: TrackId, eventType: "play" | "complete" | "skip" | "seek_away" | "favorite", source: string, positionMs: number, durationMs: number, sessionId: string | null): Promise<void>;
 }
 
 const defaultState = (): PlaybackStoreState => ({
@@ -79,6 +81,7 @@ export class PlaybackStore {
   private idCounter = 0;
   private pendingResumeTrackId: TrackId | null = null;
   private pendingResumePositionMs: number | null = null;
+  private djSessionId: string | null = null;
 
   constructor() {
     this.audio = typeof Audio === "function" ? new Audio() : null;
@@ -202,6 +205,7 @@ export class PlaybackStore {
       await this.audio.play();
       this.setState({ isPlaying: true, error: null });
       this.persistence?.recordRecentPlay(trackId, this.state.positionMs).catch(() => undefined);
+      this.recordSignal("play", trackId);
       this.persistPlayback(true);
     } catch {
       this.setState({ isPlaying: false, error: "The WebView could not decode this local file." });
@@ -227,6 +231,9 @@ export class PlaybackStore {
   seek(positionMs: number) {
     const maximum = this.state.durationMs || Number.MAX_SAFE_INTEGER;
     const nextPosition = Math.max(0, Math.min(maximum, Math.round(positionMs)));
+    if (Math.abs(nextPosition - this.state.positionMs) >= 30_000 && this.state.currentTrackId) {
+      this.recordSignal("seek_away", this.state.currentTrackId);
+    }
     if (this.audio) {
       this.audio.currentTime = nextPosition / 1000;
     }
@@ -252,7 +259,8 @@ export class PlaybackStore {
     this.persistence?.saveSettings({ volume: this.state.volume, muted }).catch(() => undefined);
   }
 
-  async next() {
+  async next(recordSkip = true) {
+    if (recordSkip && this.state.currentTrackId && this.state.isPlaying) this.recordSignal("skip", this.state.currentTrackId);
     const nextIndex = nextQueueIndex(this.state.queue, this.state.queueIndex, {
       shuffle: this.state.shuffle,
       repeat: this.state.repeatMode === "one" ? "off" : this.state.repeatMode,
@@ -265,6 +273,7 @@ export class PlaybackStore {
   }
 
   async previous() {
+    if (this.state.currentTrackId && this.state.isPlaying) this.recordSignal("skip", this.state.currentTrackId);
     if (this.state.positionMs > 3_000) {
       this.seek(0);
       return;
@@ -299,6 +308,36 @@ export class PlaybackStore {
     this.setState({ queue, queueIndex: 0 });
     this.persistQueue();
     await this.playTrack(playable[0]);
+  }
+
+  enqueueCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "dj") {
+    const items = trackIds.filter((trackId) => this.library.tracksById[trackId]?.available).map((trackId) => this.createQueueItem(trackId, source));
+    if (!items.length) return;
+    this.setState({ queue: [...this.state.queue, ...items] });
+    this.persistQueue();
+  }
+
+  setDjSession(sessionId: string | null) {
+    this.djSessionId = sessionId;
+  }
+
+  captureQueueSnapshot(): QueueSnapshot {
+    return { queue: [...this.state.queue], queueIndex: this.state.queueIndex, currentTrackId: this.state.currentTrackId, positionMs: this.state.positionMs };
+  }
+
+  async restoreQueueSnapshot(snapshot: QueueSnapshot) {
+    this.setState({ queue: snapshot.queue, queueIndex: Math.min(snapshot.queueIndex, Math.max(0, snapshot.queue.length - 1)) });
+    this.persistQueue();
+    if (snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
+      await this.playTrack(snapshot.currentTrackId);
+      this.seek(snapshot.positionMs);
+    } else {
+      this.pause();
+    }
+  }
+
+  duckForNarration(active: boolean) {
+    if (this.audio) this.audio.volume = active ? this.state.volume * 0.18 : this.state.volume;
   }
 
   removeFromQueue(queueId: string) {
@@ -346,12 +385,13 @@ export class PlaybackStore {
   }
 
   private async handleEnded() {
+    if (this.state.currentTrackId) this.recordSignal("complete", this.state.currentTrackId);
     if (this.state.repeatMode === "one") {
       this.seek(0);
       await this.playTrack(this.state.currentTrackId as TrackId);
       return;
     }
-    await this.next();
+    await this.next(false);
   }
 
   private reconcileCurrentTrack() {
@@ -443,6 +483,11 @@ export class PlaybackStore {
     }
     this.lastPersistAt = now;
     this.persistence.savePlaybackState(this.state).catch(() => undefined);
+  }
+
+  private recordSignal(eventType: "play" | "complete" | "skip" | "seek_away", trackId: TrackId) {
+    const item = this.state.queue[this.state.queueIndex];
+    this.persistence?.recordListeningEvent?.(trackId, eventType, item?.source ?? "user", this.state.positionMs, this.state.durationMs, this.djSessionId).catch(() => undefined);
   }
 }
 

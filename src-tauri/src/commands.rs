@@ -1,18 +1,22 @@
 use crate::ai::{AiCatalogTrack, AiError, AiLoginDto, AiService, AiStatusDto};
+use crate::dj::{DjSetDto, FishService, FishStatusDto, FishVoiceDto, NarrationDto};
 use crate::library::{
     DiscoveryDto, GeneratedPlaylistDto, LibraryRepository, NormalizedLibraryDto, PlaybackStateDto,
     QueueItemDto, RadioSessionDto, RhythmProfileDto, ScanSummaryDto, SearchResultsDto, SettingsDto,
     TrackReasonDto, WatchedFolderDto,
 };
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 pub struct AppState {
     pub repository: Mutex<LibraryRepository>,
     pub ai: AiService,
+    pub fish: FishService,
 }
 
 impl AppState {
@@ -24,6 +28,7 @@ impl AppState {
         Ok(Self {
             repository: Mutex::new(repository),
             ai: AiService::new(data_dir, cloud_enabled),
+            fish: FishService::new(data_dir),
         })
     }
 }
@@ -484,5 +489,251 @@ pub fn analyze_rhythm(
 ) -> Result<RhythmProfileDto, String> {
     lock_repository(&state)?
         .analyze_rhythm(track_id.trim())
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjStatusDto {
+    active_model: Option<String>,
+    luna_available: bool,
+    ai: AiStatusDto,
+    fish: FishStatusDto,
+}
+
+#[tauri::command]
+pub fn get_dj_status(state: State<'_, AppState>) -> Result<DjStatusDto, String> {
+    let ai = state.ai.status();
+    let luna_available = ai.models.iter().any(|model| model == "gpt-5.6-luna");
+    let (voice_id, voice_label) = lock_repository(&state)?
+        .get_fish_voice()
+        .map_err(|error| error.to_string())?;
+    let fish = state.fish.status(voice_id, voice_label);
+    Ok(DjStatusDto {
+        active_model: luna_available.then_some("gpt-5.6-luna".to_owned()),
+        luna_available,
+        ai,
+        fish,
+    })
+}
+
+#[tauri::command]
+pub fn set_fish_credential(state: State<'_, AppState>, api_key: String) -> Result<(), String> {
+    state.fish.set_credential(&api_key)
+}
+
+#[tauri::command]
+pub fn clear_fish_credential(state: State<'_, AppState>) -> Result<(), String> {
+    state.fish.clear_credential()
+}
+
+#[tauri::command]
+pub fn search_fish_voices(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<FishVoiceDto>, String> {
+    state.fish.search(&query, 8)
+}
+
+#[tauri::command]
+pub fn select_fish_voice(
+    state: State<'_, AppState>,
+    voice_id: String,
+    voice_label: String,
+) -> Result<(), String> {
+    lock_repository(&state)?
+        .set_fish_voice(&voice_id, &voice_label)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn generate_dj_set(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+    prompt: String,
+) -> Result<DjSetDto, String> {
+    let prompt = prompt.trim().to_owned();
+    if prompt.is_empty() || prompt.chars().count() > 200 {
+        return Err("DJ request must contain 1 to 200 characters".to_owned());
+    }
+    let (library, signals) = {
+        let repository = lock_repository(&state)?;
+        (
+            repository
+                .get_library()
+                .map_err(|error| error.to_string())?,
+            repository
+                .listening_signals()
+                .map_err(|error| error.to_string())?,
+        )
+    };
+    let artists = library
+        .artists
+        .iter()
+        .map(|artist| (artist.id.clone(), artist.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let albums = library
+        .albums
+        .iter()
+        .map(|album| (album.id.clone(), album.title.clone()))
+        .collect::<HashMap<_, _>>();
+    let catalog = library
+        .tracks
+        .iter()
+        .filter(|track| track.available)
+        .take(250)
+        .map(|track| AiCatalogTrack {
+            id: track.id.clone(),
+            title: track.title.clone(),
+            artist: track
+                .artist_ids
+                .iter()
+                .filter_map(|id| artists.get(id))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            album: track
+                .album_id
+                .as_ref()
+                .and_then(|id| albums.get(id))
+                .cloned()
+                .unwrap_or_default(),
+            genre: track.genre.clone().unwrap_or_default(),
+            year: track.year,
+            duration_ms: track.duration_ms,
+        })
+        .collect::<Vec<_>>();
+    if catalog.is_empty() {
+        return Err("Add music before starting AI DJ".to_owned());
+    }
+    let available = catalog
+        .iter()
+        .map(|track| track.id.clone())
+        .collect::<HashSet<_>>();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let session_id = session_id
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("dj-session-{timestamp}"));
+    let (title, rationale, narration, model, mode, fallback_reason, choices) = match state
+        .ai
+        .generate_dj(&prompt, &catalog, &signals)
+    {
+        Ok(draft) => (
+            draft.set_title,
+            draft.rationale,
+            draft.narration,
+            Some(draft.model),
+            "luna".to_owned(),
+            None,
+            draft.tracks,
+        ),
+        Err(AiError::Cancelled) => return Err("DJ generation was cancelled".to_owned()),
+        Err(error) => {
+            let choices = catalog
+                .iter()
+                .take(6)
+                .map(|track| crate::ai::AiTrackChoice {
+                    id: track.id.clone(),
+                    reason: "Selected by Cadmium's local library fallback.".to_owned(),
+                })
+                .collect();
+            ("Local Signal".to_owned(), "A deterministic local set because Luna is currently unavailable.".to_owned(), "Luna is unavailable right now, so I pulled a local set from your library. No pretending; just music.".to_owned(), None, "local_fallback".to_owned(), Some(error.to_string()), choices)
+        }
+    };
+    let mut seen = HashSet::new();
+    let mut chosen = choices
+        .into_iter()
+        .filter(|choice| available.contains(&choice.id) && seen.insert(choice.id.clone()))
+        .take(6)
+        .collect::<Vec<_>>();
+    for track in &catalog {
+        if chosen.len() >= 4 {
+            break;
+        }
+        if seen.insert(track.id.clone()) {
+            chosen.push(crate::ai::AiTrackChoice {
+                id: track.id.clone(),
+                reason: "Filled locally to keep the set playable.".to_owned(),
+            });
+        }
+    }
+    let track_ids = chosen
+        .iter()
+        .map(|choice| choice.id.clone())
+        .collect::<Vec<_>>();
+    let track_reasons = chosen
+        .into_iter()
+        .map(|choice| TrackReasonDto {
+            track_id: choice.id,
+            reason: choice.reason.chars().take(180).collect(),
+        })
+        .collect::<Vec<_>>();
+    let set = DjSetDto {
+        id: format!("dj-set-{timestamp}"),
+        session_id,
+        title,
+        rationale,
+        narration,
+        model,
+        generation_mode: mode,
+        track_ids,
+        track_reasons,
+        fallback_reason,
+        created_at: timestamp,
+    };
+    lock_repository(&state)?
+        .save_dj_set(&set, &prompt)
+        .map_err(|error| error.to_string())?;
+    Ok(set)
+}
+
+#[tauri::command]
+pub fn synthesize_dj_narration(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<NarrationDto, String> {
+    let (voice_id, _) = lock_repository(&state)?
+        .get_fish_voice()
+        .map_err(|error| error.to_string())?;
+    let narration = state
+        .fish
+        .synthesize(&text, voice_id.as_deref().unwrap_or(""))?;
+    let canonical = std::fs::canonicalize(&narration.path).map_err(|error| error.to_string())?;
+    app.asset_protocol_scope()
+        .allow_file(canonical)
+        .map_err(|error| error.to_string())?;
+    Ok(narration)
+}
+
+#[tauri::command]
+pub fn record_listening_event(
+    state: State<'_, AppState>,
+    track_id: String,
+    event_type: String,
+    source: String,
+    position_ms: i64,
+    duration_ms: i64,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    lock_repository(&state)?
+        .record_listening_event(
+            &track_id,
+            &event_type,
+            &source,
+            position_ms,
+            duration_ms,
+            session_id.as_deref(),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn end_dj_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    lock_repository(&state)?
+        .end_dj_session(&session_id)
         .map_err(|error| error.to_string())
 }
