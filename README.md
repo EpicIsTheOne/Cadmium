@@ -13,8 +13,10 @@ Cadmium is a Windows-first desktop music workspace for a local collection. The d
 - Build Stories and Lore from indexed metadata and actual recent plays.
 - Plot a local Mood Map, generate metadata-grounded Mixes, seed similarity Radio, and run playback-reactive Rhythm Mode.
 - Generate and persist AI playlists through the existing Codex/ChatGPT OAuth session, with validated local-only playback and an honest deterministic fallback. Cadmium discloses the bounded metadata sent to Codex and never sends file paths or artwork.
-- Run Cadmium DJ from the top sparkle: GPT-5.6 Luna builds short local-library sets, typed requests switch the vibe, real play/skip/completion signals guide later sets, and ending DJ restores the previous queue.
-- Search and select Fish Audio voices, store the Fish credential in Windows Credential Manager, and synthesize expressive captioned set introductions through the pinned Fish toolkit. Narration failures degrade to text without stopping music.
+- Run Cadmium DJ from the top sparkle: GPT-5.6 Luna builds anti-repetitive local-library sets across the whole catalog, typed or local push-to-talk requests switch the vibe, quick feedback shapes later sets, and interrupted sessions can be restored without autoplay.
+- Crossfade DJ tracks with an equal-power two-deck transition, pre-generate the next set, speak restrained introductions between sets, and fall back without dead air when cloud services are late.
+- Search, preview, and change Fish Audio voices without ending DJ. Fish is optional; narration failures degrade to synchronized captions without stopping music.
+- Download a hash-pinned OpenAI Whisper `base.en` model and official `whisper.cpp` v1.9.1 Windows runtime on first microphone use. Transcription runs locally and temporary microphone audio is deleted immediately.
 - First launch remains an honest empty state; shipped screens render only indexed library, queue, and playback data rather than presentation fixtures.
 
 ## Run it
@@ -48,6 +50,6 @@ Lofty reads the formats above. Actual playback depends on the codecs exposed by 
 
 Mood and tempo values are explainable estimates derived from title and genre metadata. Rhythm visuals follow the real playback clock, but waveform-level BPM detection is not yet implemented. AI curation requires the Codex CLI and a ChatGPT sign-in; when either is unavailable, Cadmium labels and uses its on-device ranking fallback.
 
-The DJ sends only bounded track metadata and aggregate listening signals to Luna. Fish Audio receives only the selected public voice ID and narration text. Its API key is stored under `Cadmium/FishAudio` in Windows Credential Manager and never in SQLite or tracked files. The pinned toolkit commit is `df7f36c918ab9c9bdeb7efc9f55bb728e93b31af`.
+The DJ sends only bounded track metadata and aggregate listening signals to Luna. Fish Audio receives only the selected public voice ID and narration text. Its API key is stored under `Cadmium/FishAudio` in Windows Credential Manager and never in SQLite or tracked files. The pinned toolkit commit is `df7f36c918ab9c9bdeb7efc9f55bb728e93b31af`. Whisper microphone audio never leaves the PC; the verified runtime and model live under application data rather than SQLite.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the runtime seams and [DEPENDENCY_LICENSES.md](DEPENDENCY_LICENSES.md) for declared licenses.

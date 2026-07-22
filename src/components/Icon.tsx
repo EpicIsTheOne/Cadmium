@@ -23,6 +23,7 @@ export type IconName =
   | "refresh"
   | "filter"
   | "close"
+  | "microphone"
   | "logo";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
@@ -85,6 +86,8 @@ export function Icon({ name, size = 18, ...props }: IconProps) {
         return <><path d="M4 6h16M7 12h10M10 18h4" /></>;
       case "close":
         return <><path d="m6 6 12 12M18 6 6 18" /></>;
+      case "microphone":
+        return <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6" /></>;
       case "logo":
         return <><path d="M7 4.5h8.7A3.3 3.3 0 0 1 19 7.8v8.4a3.3 3.3 0 0 1-3.3 3.3H7a3.5 3.5 0 0 1 0-7h6.3a2.5 2.5 0 0 0 0-5H7a3.5 3.5 0 0 0 0 7" /><path d="M4.5 9.5h8.8" /></>;
     }

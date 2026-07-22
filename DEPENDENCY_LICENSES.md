@@ -16,6 +16,10 @@ This is a human-readable list of the direct runtime/build dependencies used by t
 | walkdir | Recursive watched-folder traversal | Unlicense/MIT |
 | sha2 | Stable IDs and content-addressed artwork names | MIT OR Apache-2.0 |
 | base64 | Test-only WAV fixture decoding | MIT OR Apache-2.0 |
+| reqwest / rustls | Verified HTTPS download of the local Whisper runtime and model | MIT OR Apache-2.0 / Apache-2.0, ISC, MIT |
+| zip | Safe extraction of the pinned Whisper Windows runtime | MIT |
+| OpenAI Whisper `base.en` weights | Local speech recognition model | MIT |
+| whisper.cpp v1.9.1 | Local Windows transcription runtime | MIT |
 | fish-audio-tts-toolkit | Fish voice search, delivery tagging, and TTS request logic | MIT |
 | fish-audio | Toolkit realtime module dependency (realtime path disabled in Cadmium) | MIT |
 

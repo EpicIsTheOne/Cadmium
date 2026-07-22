@@ -485,7 +485,7 @@ impl CodexClient {
             return Err(AiError::SignedOut("Codex is not signed in".to_owned()));
         }
         let model = status.models.iter().find(|model| model.as_str() == "gpt-5.6-luna").cloned().ok_or_else(|| AiError::Missing("GPT-5.6 Luna is unavailable. Update Codex CLI to 0.144.0 or newer and confirm Luna access for this account.".to_owned()))?;
-        let developer_instructions = "You are Cadmium's local-library DJ. Do not use tools, browse, execute commands, or access files. Return only strict JSON with setTitle, rationale, narration, and tracks. tracks is 4 to 6 objects with id and reason. Use only supplied IDs, avoid duplicates, and ground every claim in supplied metadata. narration is 1 to 3 short expressive radio-host sentences and must not invent facts.";
+        let developer_instructions = "You are Cadmium's local-library DJ. Do not use tools, browse, execute commands, or access files. Return only strict JSON with setTitle, rationale, narration, and tracks. tracks is 4 to 6 objects with id and reason. Use only supplied IDs and ground every claim in supplied metadata. Treat recentSetTrackIds as exclusions, avoid repeating artists back-to-back, use more/less feedback strongly, and balance favorites with neglected tracks. Shape a coherent energy arc for the request. narration is 1 to 3 short expressive radio-host sentences and must not invent facts.";
         let thread = self.request(
             "thread/start",
             json!({

@@ -36,6 +36,8 @@ export interface DjSet {
   readonly trackIds: readonly TrackId[];
   readonly trackReasons: readonly { readonly trackId: TrackId; readonly reason: string }[];
   readonly fallbackReason?: string | null;
+  readonly sequence: number;
+  readonly state: "active" | "pending" | "played" | string;
   readonly createdAt: number;
 }
 
@@ -52,4 +54,27 @@ export interface QueueSnapshot {
   readonly queueIndex: number;
   readonly currentTrackId: TrackId | null;
   readonly positionMs: number;
+}
+
+export interface DjRecovery {
+  readonly sessionId: string;
+  readonly currentSet: DjSet;
+  readonly ordinaryQueue: QueueSnapshot;
+  readonly djQueue: QueueSnapshot;
+}
+
+export interface WhisperStatus {
+  readonly installed: boolean;
+  readonly downloading: boolean;
+  readonly downloadedBytes: number;
+  readonly totalBytes: number;
+  readonly progress: number;
+  readonly model: string;
+  readonly message: string;
+}
+
+export interface DjTranscription {
+  readonly text: string;
+  readonly durationMs: number;
+  readonly model: string;
 }

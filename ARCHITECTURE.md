@@ -42,10 +42,14 @@ AI Playlist Director uses a single managed `codex app-server --stdio` process an
 
 ## AI DJ and voice runtime
 
-Cadmium DJ uses the managed app-server but requires the exact `gpt-5.6-luna` catalog ID. DJ sessions and sets are persisted separately from ordinary playlists, while `listening_events` stores actual play, completion, skip, seek-away, and favorite events. The renderer snapshots the ordinary queue before DJ takeover and restores it when the session ends.
+Cadmium DJ uses the managed app-server but requires the exact `gpt-5.6-luna` catalog ID. Catalog selection rotates across the entire library, excludes recent sets, and combines real completion/skip/favorite signals with explicit more/less feedback. DJ sessions persist the ordinary queue, active DJ queue, current set, and position so restart recovery can be offered without autoplay.
+
+Playback uses two WebView media elements during DJ transitions. The incoming deck is preloaded and follows a three-second equal-power curve; unsupported or late media falls back to the ordinary ended-event handoff. The next set and its narration are prepared while two tracks remain, and narration ducks both decks without changing the persisted user volume.
 
 Fish voice search and deterministic delivery tagging come from the pinned `fish-audio-tts-toolkit` sources embedded at Rust compile time. Rust materializes an app-data-only Node worker and communicates through JSONL stdio; no localhost service is exposed. The Fish key is read from Windows Credential Manager and passed only to the child process environment. Generated MP3 narration is content-addressed, size-bounded, scoped through Tauri's asset protocol, and played by a separate media element while music is ducked.
 
+Push-to-talk captures at most 15 seconds of mono PCM in the renderer, resamples it to 16 kHz, and sends the bounded WAV bytes through a typed Tauri command. Rust downloads the pinned official `whisper.cpp` v1.9.1 Windows runtime and OpenAI `base.en` weights on demand, verifies both SHA-256 digests, invokes the hidden local process with fixed arguments, reads only its transcript file, and removes request audio/output afterward.
+
 ## Verification seams
 
-Rust unit tests cover migrations, the legal deterministic WAV fixture, metadata fallback, scan/search, missing-file reconciliation, structured DJ output, listening signals, and DJ persistence. Vitest covers normalized empty-provider contracts, queue/shuffle/repeat transitions, and no-autoplay playback restoration. Fish/Luna live availability, installer signing, updater behavior, and codec support beyond the local WebView require packaged-app verification.
+Rust unit tests cover migrations, the legal deterministic WAV fixture, metadata fallback, scan/search, missing-file reconciliation, structured DJ output, listening signals, DJ recovery/feedback, and Whisper input bounds. Vitest covers normalized provider contracts, queue behavior, no-autoplay restoration, crossfade curves, and microphone resampling/WAV encoding. Fish/Luna/Whisper live availability, audio devices, installer signing, and codec support beyond the local WebView require packaged-app verification.

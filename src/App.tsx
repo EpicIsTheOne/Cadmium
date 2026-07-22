@@ -54,6 +54,7 @@ export default function App() {
   const [searchFocusVersion, setSearchFocusVersion] = useState(0);
   const [aiFocusVersion, setAiFocusVersion] = useState(0);
   const [djOpen, setDjOpen] = useState(false);
+  const [djActivity, setDjActivity] = useState("idle");
   const playbackInitialized = useRef(false);
 
   const loadLibrary = useCallback(async () => {
@@ -303,7 +304,7 @@ export default function App() {
               >
                 <Icon name="panel" size={18} />
               </button>
-              <button aria-expanded={djOpen} aria-label="Open AI DJ" className={djOpen ? "icon-button notification-button dj-toggle is-active" : "icon-button notification-button dj-toggle"} onClick={() => setDjOpen(true)} title="Open Cadmium DJ" type="button"><Icon name="spark" size={17} /></button>
+              <button aria-expanded={djOpen} aria-label={`Open AI DJ · ${djActivity}`} className={`icon-button notification-button dj-toggle ${djOpen || djActivity !== "idle" ? "is-active" : ""} is-${djActivity}`} onClick={() => setDjOpen(true)} title="Open Cadmium DJ" type="button"><Icon name="spark" size={17} /></button>
             </div>
           </header>
           <div className="workspace-content">{renderScreen()}</div>
@@ -314,7 +315,7 @@ export default function App() {
         <ContextPanel library={library ?? undefined} onClose={() => setContextPanelOpen(false)} onNavigate={navigate} />
       ) : null}
       <BottomPlayer favoriteTrackIds={favoriteTrackIds} library={library ?? undefined} onToggleFavorite={handleToggleFavorite} />
-      {library && provider instanceof LocalLibraryProvider ? <DjPanel library={library} onClose={() => setDjOpen(false)} open={djOpen} provider={provider} /> : null}
+      {library && provider instanceof LocalLibraryProvider ? <DjPanel library={library} onActivityChange={setDjActivity} onClose={() => setDjOpen(false)} open={djOpen} provider={provider} /> : null}
 
       {isFolderDragActive ? <div className="folder-drop-overlay" role="status"><div><Icon name="folder" size={42} /><strong>Drop music folders to add them</strong><span>Cadmium will scan supported audio files recursively.</span></div></div> : null}
 

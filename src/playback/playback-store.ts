@@ -74,7 +74,11 @@ export class PlaybackStore {
     recentTrackIds: [],
   };
   private readonly listeners = new Set<() => void>();
-  private readonly audio: HTMLAudioElement | null;
+  private audio: HTMLAudioElement | null;
+  private fadingAudio: HTMLAudioElement | null = null;
+  private crossfadeInProgress = false;
+  private narrationDucked = false;
+  private djCrossfadeMs = 3_000;
   private persistence: PlaybackPersistence | null = null;
   private initialized = false;
   private lastPersistAt = 0;
@@ -88,26 +92,35 @@ export class PlaybackStore {
     if (!this.audio) {
       return;
     }
-    this.audio.preload = "metadata";
-    this.audio.addEventListener("loadedmetadata", () => {
+    this.bindAudio(this.audio);
+  }
+
+  private bindAudio(audio: HTMLAudioElement) {
+    audio.preload = "metadata";
+    audio.addEventListener("loadedmetadata", () => {
+      if (this.audio !== audio) return;
       this.applyPendingResumePosition();
       this.setState({
-        durationMs: Math.round((this.audio?.duration ?? 0) * 1000) || this.state.durationMs,
+        durationMs: Math.round((audio.duration ?? 0) * 1000) || this.state.durationMs,
       });
     });
-    this.audio.addEventListener("timeupdate", () => {
-      this.setState({ positionMs: Math.round((this.audio?.currentTime || 0) * 1000) });
+    audio.addEventListener("timeupdate", () => {
+      if (this.audio !== audio || this.crossfadeInProgress) return;
+      this.setState({ positionMs: Math.round((audio.currentTime || 0) * 1000) });
       this.persistPlayback(false);
+      void this.maybeStartDjCrossfade();
     });
-    this.audio.addEventListener("play", () => this.setState({ isPlaying: true, error: null }));
-    this.audio.addEventListener("pause", () => this.setState({ isPlaying: false }));
-    this.audio.addEventListener("error", () => {
+    audio.addEventListener("play", () => { if (this.audio === audio) this.setState({ isPlaying: true, error: null }); });
+    audio.addEventListener("pause", () => { if (this.audio === audio) this.setState({ isPlaying: false }); });
+    audio.addEventListener("error", () => {
+      if (this.audio !== audio) return;
       this.setState({
         isPlaying: false,
-        error: describeAudioError(this.audio?.error ?? null),
+        error: describeAudioError(audio.error),
       });
     });
-    this.audio.addEventListener("ended", () => {
+    audio.addEventListener("ended", () => {
+      if (this.audio !== audio) return;
       void this.handleEnded();
     });
   }
@@ -219,6 +232,7 @@ export class PlaybackStore {
 
   pause() {
     this.audio?.pause();
+    this.fadingAudio?.pause();
     this.setState({ isPlaying: false });
     this.persistPlayback(true);
   }
@@ -249,7 +263,7 @@ export class PlaybackStore {
   setVolume(volume: number) {
     const nextVolume = clampVolume(volume);
     if (this.audio) {
-      this.audio.volume = nextVolume;
+      this.audio.volume = this.narrationDucked ? nextVolume * 0.18 : nextVolume;
     }
     this.setState({ volume: nextVolume });
     this.persistence?.saveSettings({ volume: nextVolume, muted: this.state.muted }).catch(() => undefined);
@@ -260,6 +274,7 @@ export class PlaybackStore {
     if (this.audio) {
       this.audio.muted = muted;
     }
+    if (this.fadingAudio) this.fadingAudio.muted = muted;
     this.setState({ muted });
     this.persistence?.saveSettings({ volume: this.state.volume, muted }).catch(() => undefined);
   }
@@ -310,9 +325,14 @@ export class PlaybackStore {
       return;
     }
     const queue = playable.map((trackId) => this.createQueueItem(trackId, source));
+    const shouldCrossfade = source === "dj" && this.djCrossfadeMs > 0 && this.state.isPlaying && Boolean(this.audio);
     this.setState({ queue, queueIndex: 0 });
     this.persistQueue();
-    await this.playTrack(playable[0]);
+    if (shouldCrossfade) {
+      this.crossfadeInProgress = true;
+      try { await this.crossfadeToQueueIndex(0); }
+      finally { this.crossfadeInProgress = false; }
+    } else await this.playTrack(playable[0]);
   }
 
   enqueueCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "dj") {
@@ -340,23 +360,33 @@ export class PlaybackStore {
     this.djSessionId = sessionId;
   }
 
+  setDjCrossfadeMs(value: number) {
+    this.djCrossfadeMs = Math.max(0, Math.min(8_000, Math.round(value)));
+  }
+
   captureQueueSnapshot(): QueueSnapshot {
     return { queue: [...this.state.queue], queueIndex: this.state.queueIndex, currentTrackId: this.state.currentTrackId, positionMs: this.state.positionMs };
   }
 
-  async restoreQueueSnapshot(snapshot: QueueSnapshot) {
+  async restoreQueueSnapshot(snapshot: QueueSnapshot, autoplay = true) {
     this.setState({ queue: snapshot.queue, queueIndex: Math.min(snapshot.queueIndex, Math.max(0, snapshot.queue.length - 1)) });
     this.persistQueue();
-    if (snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
+    if (autoplay && snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
       await this.playTrack(snapshot.currentTrackId);
       this.seek(snapshot.positionMs);
+    } else if (snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
+      this.pendingResumeTrackId = snapshot.currentTrackId;
+      this.pendingResumePositionMs = snapshot.positionMs;
+      this.setState({ currentTrackId: snapshot.currentTrackId, positionMs: snapshot.positionMs, durationMs: this.library.tracksById[snapshot.currentTrackId]?.durationMs ?? 0, isPlaying: false });
     } else {
       this.pause();
     }
   }
 
   duckForNarration(active: boolean) {
+    this.narrationDucked = active;
     if (this.audio) this.audio.volume = active ? this.state.volume * 0.18 : this.state.volume;
+    if (this.fadingAudio) this.fadingAudio.volume = active ? this.state.volume * 0.18 : this.state.volume;
   }
 
   removeFromQueue(queueId: string) {
@@ -399,11 +429,70 @@ export class PlaybackStore {
     if (!item) {
       return;
     }
-    this.setState({ queueIndex });
-    await this.playTrack(item.trackId, queueIndex);
+    const current = this.state.queue[this.state.queueIndex];
+    if (this.state.isPlaying && current?.source === "dj" && item.source === "dj" && this.audio && this.djCrossfadeMs > 0) {
+      this.crossfadeInProgress = true;
+      try { await this.crossfadeToQueueIndex(queueIndex); }
+      finally { this.crossfadeInProgress = false; }
+    } else {
+      this.setState({ queueIndex });
+      await this.playTrack(item.trackId, queueIndex);
+    }
+  }
+
+  private async maybeStartDjCrossfade() {
+    if (this.djCrossfadeMs <= 0 || this.crossfadeInProgress || !this.state.isPlaying || this.state.durationMs <= 0 || this.state.durationMs - this.state.positionMs > this.djCrossfadeMs) return;
+    const current = this.state.queue[this.state.queueIndex];
+    const nextIndex = this.state.queueIndex + 1;
+    const next = this.state.queue[nextIndex];
+    if (current?.source !== "dj" || next?.source !== "dj") return;
+    this.crossfadeInProgress = true;
+    try { await this.crossfadeToQueueIndex(nextIndex); }
+    finally { this.crossfadeInProgress = false; }
+  }
+
+  private async crossfadeToQueueIndex(queueIndex: number) {
+    const item = this.state.queue[queueIndex];
+    const track = item ? this.library.tracksById[item.trackId] : undefined;
+    const previous = this.audio;
+    if (!item || !track?.available || track.source.kind !== "local-file" || !track.source.locator || !previous || typeof Audio !== "function") {
+      if (item) { this.setState({ queueIndex }); await this.playTrack(item.trackId, queueIndex); }
+      return;
+    }
+    const next = new Audio();
+    this.bindAudio(next);
+    next.preload = "auto";
+    next.src = track.source.locator;
+    next.volume = 0;
+    next.muted = this.state.muted;
+    next.load();
+    try { await next.play(); }
+    catch { this.setState({ queueIndex }); await this.playTrack(item.trackId, queueIndex); return; }
+    this.fadingAudio = previous;
+    this.audio = next;
+    this.setState({ queueIndex, currentTrackId: item.trackId, positionMs: 0, durationMs: track.durationMs, isPlaying: true, error: null });
+    this.persistence?.recordRecentPlay(item.trackId, 0).catch(() => undefined);
+    this.recordSignal("play", item.trackId);
+    const started = performance.now();
+    await new Promise<void>((resolve) => {
+      const timer = window.setInterval(() => {
+        const progress = Math.min(1, (performance.now() - started) / Math.max(1, this.djCrossfadeMs));
+        const target = this.narrationDucked ? this.state.volume * 0.18 : this.state.volume;
+        const levels = equalPowerCrossfade(progress);
+        previous.volume = target * levels.outgoing;
+        next.volume = target * levels.incoming;
+        if (progress >= 1) { window.clearInterval(timer); resolve(); }
+      }, 50);
+    });
+    previous.pause();
+    previous.removeAttribute("src");
+    this.fadingAudio = null;
+    next.volume = this.narrationDucked ? this.state.volume * 0.18 : this.state.volume;
+    this.persistPlayback(true);
   }
 
   private async handleEnded() {
+    if (this.crossfadeInProgress) return;
     if (this.state.currentTrackId) this.recordSignal("complete", this.state.currentTrackId);
     if (this.state.repeatMode === "one") {
       this.seek(0);
@@ -462,7 +551,7 @@ export class PlaybackStore {
     if (!this.audio) {
       return;
     }
-    this.audio.volume = this.state.volume;
+    this.audio.volume = this.narrationDucked ? this.state.volume * 0.18 : this.state.volume;
     this.audio.muted = this.state.muted;
   }
 
@@ -512,6 +601,11 @@ export class PlaybackStore {
 
 function clampVolume(value: number) {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0.8));
+}
+
+export function equalPowerCrossfade(progress: number) {
+  const normalized = Math.min(1, Math.max(0, progress));
+  return { outgoing: Math.cos(normalized * Math.PI / 2), incoming: Math.sin(normalized * Math.PI / 2) };
 }
 
 function clampQueueIndex(value: number, length: number) {

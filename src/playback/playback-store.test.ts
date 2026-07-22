@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NormalizedLibrary, TrackId } from "../domain/media";
-import { PlaybackStore } from "./playback-store";
+import { equalPowerCrossfade, PlaybackStore } from "./playback-store";
 
 const trackId = "track-1" as TrackId;
 const library: NormalizedLibrary = {
@@ -166,5 +166,15 @@ describe("playback restoration", () => {
     expect(store.getSnapshot().queueIndex).toBe(1);
     expect(store.getSnapshot().isPlaying).toBe(true);
     expect(audio.play).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("DJ crossfade", () => {
+  it("uses equal-power endpoints and midpoint", () => {
+    expect(equalPowerCrossfade(0)).toEqual({ outgoing: 1, incoming: 0 });
+    expect(equalPowerCrossfade(1).outgoing).toBeCloseTo(0);
+    expect(equalPowerCrossfade(1).incoming).toBeCloseTo(1);
+    expect(equalPowerCrossfade(0.5).outgoing).toBeCloseTo(Math.SQRT1_2);
+    expect(equalPowerCrossfade(0.5).incoming).toBeCloseTo(Math.SQRT1_2);
   });
 });

@@ -105,7 +105,27 @@ pub struct DjSetDto {
     pub track_ids: Vec<String>,
     pub track_reasons: Vec<crate::library::TrackReasonDto>,
     pub fallback_reason: Option<String>,
+    pub sequence: i64,
+    pub state: String,
     pub created_at: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjQueueSnapshotDto {
+    pub queue: Vec<crate::library::QueueItemDto>,
+    pub queue_index: usize,
+    pub current_track_id: Option<String>,
+    pub position_ms: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DjRecoveryDto {
+    pub session_id: String,
+    pub current_set: DjSetDto,
+    pub ordinary_queue: DjQueueSnapshotDto,
+    pub dj_queue: DjQueueSnapshotDto,
 }
 
 pub struct FishService {
@@ -183,6 +203,9 @@ impl FishService {
         }
         if voice_id.is_empty() {
             return Err("Choose a Fish Audio voice first".to_owned());
+        }
+        if voice_id.chars().count() > 160 {
+            return Err("Fish Audio voice id is invalid".to_owned());
         }
         let cache_dir = self.data_dir.join("dj-narration");
         std::fs::create_dir_all(&cache_dir).map_err(|error| error.to_string())?;

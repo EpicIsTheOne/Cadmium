@@ -25,7 +25,7 @@ import type {
   PlaybackSnapshot,
   PlaybackStoreState,
 } from "../playback/playback-store";
-import type { DjNarration, DjSet, DjStatus, FishVoice } from "../domain/dj";
+import type { DjNarration, DjRecovery, DjSet, DjStatus, DjTranscription, FishVoice, QueueSnapshot, WhisperStatus } from "../domain/dj";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -356,6 +356,14 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     return this.call<DjStatus>("get_dj_status");
   }
 
+  async getDjCrossfadeMs(): Promise<number> {
+    return this.call<number>("get_dj_crossfade_ms");
+  }
+
+  async setDjCrossfadeMs(value: number): Promise<number> {
+    return this.call<number>("set_dj_crossfade_ms", { value: Math.max(0, Math.min(8_000, Math.round(value))) });
+  }
+
   async setFishCredential(apiKey: string): Promise<void> {
     await this.call<void>("set_fish_credential", { apiKey });
   }
@@ -370,6 +378,39 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
 
   async selectFishVoice(voiceId: string, voiceLabel: string): Promise<void> {
     await this.call<void>("select_fish_voice", { voiceId, voiceLabel });
+  }
+
+  async previewFishVoice(voiceId: string): Promise<DjNarration> {
+    const narration = await this.call<Omit<DjNarration, "src"> & { path: string }>("preview_fish_voice", { voiceId });
+    return { ...narration, src: convertFileSrc(narration.path) };
+  }
+
+  async getWhisperStatus(): Promise<WhisperStatus> {
+    return this.call<WhisperStatus>("get_whisper_status");
+  }
+
+  async downloadWhisperModel(): Promise<WhisperStatus> {
+    return this.call<WhisperStatus>("download_whisper_model");
+  }
+
+  async cancelWhisperDownload(): Promise<void> {
+    await this.call<void>("cancel_whisper_download");
+  }
+
+  async transcribeDjRequest(wavBytes: Uint8Array): Promise<DjTranscription> {
+    return this.call<DjTranscription>("transcribe_dj_request", { wavBytes: Array.from(wavBytes) });
+  }
+
+  async recordDjFeedback(sessionId: string, trackId: TrackId, sentiment: "more" | "less"): Promise<void> {
+    await this.call<void>("record_dj_feedback", { sessionId, trackId, sentiment });
+  }
+
+  async getDjRecovery(): Promise<DjRecovery | null> {
+    return this.call<DjRecovery | null>("get_dj_recovery");
+  }
+
+  async saveDjRecovery(sessionId: string, currentSetId: string, ordinaryQueue: QueueSnapshot, djQueue: QueueSnapshot): Promise<void> {
+    await this.call<void>("save_dj_recovery", { sessionId, currentSetId, ordinaryQueue, djQueue });
   }
 
   async generateDjSet(sessionId: string | null, prompt: string): Promise<DjSet> {

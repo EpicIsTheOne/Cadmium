@@ -1,14 +1,16 @@
 use crate::ai::{AiCatalogTrack, AiError, AiLoginDto, AiService, AiStatusDto};
-use crate::dj::{DjSetDto, FishService, FishStatusDto, FishVoiceDto, NarrationDto};
+use crate::dj::{DjQueueSnapshotDto, DjRecoveryDto, DjSetDto, FishService, FishStatusDto, FishVoiceDto, NarrationDto};
 use crate::library::{
     DiscoveryDto, GeneratedPlaylistDto, LibraryRepository, NormalizedLibraryDto, PlaybackStateDto,
     QueueItemDto, RadioSessionDto, RhythmProfileDto, ScanSummaryDto, SearchResultsDto, SettingsDto,
     TrackReasonDto, WatchedFolderDto,
 };
+use crate::whisper::{TranscriptionDto, WhisperService, WhisperStatusDto};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Mutex;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -17,6 +19,7 @@ pub struct AppState {
     pub repository: Mutex<LibraryRepository>,
     pub ai: AiService,
     pub fish: FishService,
+    pub whisper: Arc<WhisperService>,
 }
 
 impl AppState {
@@ -29,6 +32,7 @@ impl AppState {
             repository: Mutex::new(repository),
             ai: AiService::new(data_dir, cloud_enabled),
             fish: FishService::new(data_dir),
+            whisper: Arc::new(WhisperService::new(data_dir)),
         })
     }
 }
@@ -518,6 +522,16 @@ pub fn get_dj_status(state: State<'_, AppState>) -> Result<DjStatusDto, String> 
 }
 
 #[tauri::command]
+pub fn get_dj_crossfade_ms(state: State<'_, AppState>) -> Result<i64, String> {
+    lock_repository(&state)?.get_dj_crossfade_ms().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_dj_crossfade_ms(state: State<'_, AppState>, value: i64) -> Result<i64, String> {
+    lock_repository(&state)?.set_dj_crossfade_ms(value).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn set_fish_credential(state: State<'_, AppState>, api_key: String) -> Result<(), String> {
     state.fish.set_credential(&api_key)
 }
@@ -547,6 +561,51 @@ pub fn select_fish_voice(
 }
 
 #[tauri::command]
+pub fn preview_fish_voice(app: AppHandle, state: State<'_, AppState>, voice_id: String) -> Result<NarrationDto, String> {
+    let narration = state.fish.synthesize("This is Cadmium DJ. Let’s find the next signal.", &voice_id)?;
+    let canonical = std::fs::canonicalize(&narration.path).map_err(|error| error.to_string())?;
+    app.asset_protocol_scope().allow_file(canonical).map_err(|error| error.to_string())?;
+    Ok(narration)
+}
+
+#[tauri::command]
+pub fn get_whisper_status(state: State<'_, AppState>) -> WhisperStatusDto {
+    state.whisper.status()
+}
+
+#[tauri::command]
+pub async fn download_whisper_model(state: State<'_, AppState>) -> Result<WhisperStatusDto, String> {
+    let whisper = Arc::clone(&state.whisper);
+    tauri::async_runtime::spawn_blocking(move || whisper.download_model()).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn cancel_whisper_download(state: State<'_, AppState>) {
+    state.whisper.cancel_download();
+}
+
+#[tauri::command]
+pub async fn transcribe_dj_request(state: State<'_, AppState>, wav_bytes: Vec<u8>) -> Result<TranscriptionDto, String> {
+    let whisper = Arc::clone(&state.whisper);
+    tauri::async_runtime::spawn_blocking(move || whisper.transcribe(wav_bytes)).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn record_dj_feedback(state: State<'_, AppState>, session_id: String, track_id: String, sentiment: String) -> Result<(), String> {
+    lock_repository(&state)?.record_dj_feedback(&session_id, &track_id, &sentiment).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_dj_recovery(state: State<'_, AppState>) -> Result<Option<DjRecoveryDto>, String> {
+    lock_repository(&state)?.get_dj_recovery().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_dj_recovery(state: State<'_, AppState>, session_id: String, current_set_id: String, ordinary_queue: DjQueueSnapshotDto, dj_queue: DjQueueSnapshotDto) -> Result<(), String> {
+    lock_repository(&state)?.save_dj_recovery(&session_id, &current_set_id, &ordinary_queue, &dj_queue).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn generate_dj_set(
     state: State<'_, AppState>,
     session_id: Option<String>,
@@ -567,6 +626,13 @@ pub fn generate_dj_set(
                 .map_err(|error| error.to_string())?,
         )
     };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let session_id = session_id
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("dj-session-{timestamp}"));
     let artists = library
         .artists
         .iter()
@@ -577,10 +643,18 @@ pub fn generate_dj_set(
         .iter()
         .map(|album| (album.id.clone(), album.title.clone()))
         .collect::<HashMap<_, _>>();
-    let catalog = library
+    let recent_set_ids = signals.get("recentSetTrackIds").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(serde_json::Value::as_str).collect::<HashSet<_>>();
+    let available_count = library.tracks.iter().filter(|track| track.available).count();
+    let mut available_tracks = library
         .tracks
         .iter()
         .filter(|track| track.available)
+        .collect::<Vec<_>>();
+    let unseen_count = available_tracks.iter().filter(|track| !recent_set_ids.contains(track.id.as_str())).count();
+    available_tracks.sort_by(|left, right| dj_track_score(&right.id, &signals, &session_id).cmp(&dj_track_score(&left.id, &signals, &session_id)));
+    let catalog = available_tracks
+        .into_iter()
+        .filter(|track| available_count <= 12 || unseen_count < 4 || !recent_set_ids.contains(track.id.as_str()))
         .take(250)
         .map(|track| AiCatalogTrack {
             id: track.id.clone(),
@@ -610,13 +684,6 @@ pub fn generate_dj_set(
         .iter()
         .map(|track| track.id.clone())
         .collect::<HashSet<_>>();
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let session_id = session_id
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| format!("dj-session-{timestamp}"));
     let (title, rationale, narration, model, mode, fallback_reason, choices) = match state
         .ai
         .generate_dj(&prompt, &catalog, &signals)
@@ -644,21 +711,32 @@ pub fn generate_dj_set(
         }
     };
     let mut seen = HashSet::new();
-    let mut chosen = choices
-        .into_iter()
-        .filter(|choice| available.contains(&choice.id) && seen.insert(choice.id.clone()))
-        .take(6)
-        .collect::<Vec<_>>();
+    let artist_by_id = catalog.iter().map(|track| (track.id.as_str(), track.artist.as_str())).collect::<HashMap<_, _>>();
+    let diverse_artists = artist_by_id.values().filter(|value| !value.is_empty()).collect::<HashSet<_>>().len() > 1;
+    let mut chosen = Vec::new();
+    let mut last_artist = "";
+    for choice in choices {
+        if chosen.len() >= 6 || !available.contains(&choice.id) || !seen.insert(choice.id.clone()) { continue; }
+        let artist = artist_by_id.get(choice.id.as_str()).copied().unwrap_or("");
+        if diverse_artists && !artist.is_empty() && artist == last_artist { seen.remove(&choice.id); continue; }
+        last_artist = artist;
+        chosen.push(choice);
+    }
     for track in &catalog {
         if chosen.len() >= 4 {
             break;
         }
-        if seen.insert(track.id.clone()) {
+        if seen.insert(track.id.clone()) && (!diverse_artists || track.artist.is_empty() || track.artist != last_artist) {
+            last_artist = &track.artist;
             chosen.push(crate::ai::AiTrackChoice {
                 id: track.id.clone(),
                 reason: "Filled locally to keep the set playable.".to_owned(),
             });
         }
+    }
+    for track in &catalog {
+        if chosen.len() >= 4 { break; }
+        if seen.insert(track.id.clone()) { chosen.push(crate::ai::AiTrackChoice { id: track.id.clone(), reason: "Filled locally to keep the set playable.".to_owned() }); }
     }
     let track_ids = chosen
         .iter()
@@ -671,6 +749,7 @@ pub fn generate_dj_set(
             reason: choice.reason.chars().take(180).collect(),
         })
         .collect::<Vec<_>>();
+    let sequence = lock_repository(&state)?.next_dj_sequence(&session_id).map_err(|error| error.to_string())?;
     let set = DjSetDto {
         id: format!("dj-set-{timestamp}"),
         session_id,
@@ -682,12 +761,30 @@ pub fn generate_dj_set(
         track_ids,
         track_reasons,
         fallback_reason,
+        sequence,
+        state: "active".to_owned(),
         created_at: timestamp,
     };
     lock_repository(&state)?
         .save_dj_set(&set, &prompt)
         .map_err(|error| error.to_string())?;
     Ok(set)
+}
+
+fn dj_track_score(track_id: &str, signals: &serde_json::Value, seed: &str) -> i64 {
+    let stats = signals.get("tracks").and_then(serde_json::Value::as_array).into_iter().flatten().find(|item| item.get("trackId").and_then(serde_json::Value::as_str) == Some(track_id));
+    let plays = stats.and_then(|item| item.get("plays")).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let completions = stats.and_then(|item| item.get("completions")).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let skips = stats.and_then(|item| item.get("skips")).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let feedback = signals.get("feedback").and_then(serde_json::Value::as_array).into_iter().flatten().find(|item| item.get("trackId").and_then(serde_json::Value::as_str) == Some(track_id));
+    let more = feedback.and_then(|item| item.get("more")).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let less = feedback.and_then(|item| item.get("less")).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let favorite = signals.get("favoriteTrackIds").and_then(serde_json::Value::as_array).is_some_and(|items| items.iter().any(|item| item.as_str() == Some(track_id)));
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    seed.hash(&mut hasher);
+    track_id.hash(&mut hasher);
+    let variety = (hasher.finish() % 100) as i64;
+    variety + if plays == 0 { 85 } else { 0 } + completions * 9 - skips * 14 + more * 60 - less * 120 + if favorite { 75 } else { 0 }
 }
 
 #[tauri::command]

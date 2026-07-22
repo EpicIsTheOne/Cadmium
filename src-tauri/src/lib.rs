@@ -2,6 +2,7 @@ mod ai;
 mod commands;
 mod dj;
 mod library;
+mod whisper;
 
 use tauri::Manager;
 
@@ -44,11 +45,21 @@ pub fn run() {
             commands::start_radio,
             commands::analyze_rhythm,
             commands::get_dj_status,
+            commands::get_dj_crossfade_ms,
+            commands::set_dj_crossfade_ms,
             commands::set_fish_credential,
             commands::clear_fish_credential,
             commands::search_fish_voices,
             commands::select_fish_voice,
+            commands::preview_fish_voice,
+            commands::get_whisper_status,
+            commands::download_whisper_model,
+            commands::cancel_whisper_download,
+            commands::transcribe_dj_request,
             commands::generate_dj_set,
+            commands::record_dj_feedback,
+            commands::get_dj_recovery,
+            commands::save_dj_recovery,
             commands::synthesize_dj_narration,
             commands::record_listening_event,
             commands::end_dj_session

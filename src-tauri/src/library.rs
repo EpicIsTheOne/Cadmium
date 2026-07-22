@@ -196,6 +196,27 @@ const MIGRATIONS: &[(i64, &str)] = &[
         INSERT INTO settings (key, value) VALUES ('fish_voice_label', '') ON CONFLICT(key) DO NOTHING;
         "#,
     ),
+    (
+        7,
+        r#"
+        ALTER TABLE dj_sessions ADD COLUMN ordinary_queue_json TEXT NOT NULL DEFAULT '';
+        ALTER TABLE dj_sessions ADD COLUMN dj_queue_json TEXT NOT NULL DEFAULT '';
+        ALTER TABLE dj_sessions ADD COLUMN current_set_id TEXT;
+        ALTER TABLE dj_sessions ADD COLUMN queue_index INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE dj_sessions ADD COLUMN position_ms INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE dj_sets ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE dj_sets ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'active';
+        CREATE TABLE dj_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES dj_sessions(id) ON DELETE CASCADE,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            sentiment TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_dj_feedback_session_track ON dj_feedback(session_id, track_id, created_at DESC);
+        INSERT INTO settings (key, value) VALUES ('dj_crossfade_ms', '3000') ON CONFLICT(key) DO NOTHING;
+        "#,
+    ),
 ];
 
 #[derive(Debug)]
@@ -890,18 +911,105 @@ impl LibraryRepository {
             "trackId": row.get::<_, String>(0)?, "plays": row.get::<_, i64>(1)?, "completions": row.get::<_, i64>(2)?, "skips": row.get::<_, i64>(3)?, "lastEventAt": row.get::<_, i64>(4)?
         })))?.collect::<Result<Vec<_>, _>>()?;
         let favorites = self.get_favorite_track_ids()?;
-        Ok(serde_json::json!({"tracks":tracks, "favoriteTrackIds":favorites}))
+        let mut feedback_statement = self.conn.prepare(
+            "SELECT track_id,
+                    SUM(CASE WHEN sentiment = 'more' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN sentiment = 'less' THEN 1 ELSE 0 END)
+             FROM dj_feedback GROUP BY track_id ORDER BY MAX(created_at) DESC LIMIT 250",
+        )?;
+        let feedback = feedback_statement.query_map([], |row| Ok(serde_json::json!({
+            "trackId": row.get::<_, String>(0)?, "more": row.get::<_, i64>(1)?, "less": row.get::<_, i64>(2)?
+        })))?.collect::<Result<Vec<_>, _>>()?;
+        let recent_set_track_ids = self.conn.prepare("SELECT track_ids_json FROM dj_sets ORDER BY created_at DESC LIMIT 12")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .filter_map(Result::ok)
+            .filter_map(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+            .flatten()
+            .collect::<Vec<_>>();
+        Ok(serde_json::json!({"tracks":tracks, "favoriteTrackIds":favorites, "feedback":feedback, "recentSetTrackIds":recent_set_track_ids}))
+    }
+
+    pub fn next_dj_sequence(&self, session_id: &str) -> LibraryResult<i64> {
+        Ok(self.conn.query_row(
+            "SELECT COALESCE(MAX(sequence), -1) + 1 FROM dj_sets WHERE session_id = ?1",
+            params![session_id.trim()],
+            |row| row.get(0),
+        )?)
+    }
+
+    pub fn get_dj_crossfade_ms(&self) -> LibraryResult<i64> {
+        let value = self.conn.query_row("SELECT value FROM settings WHERE key = 'dj_crossfade_ms'", [], |row| row.get::<_, String>(0)).optional()?;
+        Ok(value.and_then(|item| item.parse::<i64>().ok()).unwrap_or(3000).clamp(0, 8000))
+    }
+
+    pub fn set_dj_crossfade_ms(&mut self, value: i64) -> LibraryResult<i64> {
+        let value = value.clamp(0, 8000);
+        self.conn.execute("INSERT INTO settings (key, value) VALUES ('dj_crossfade_ms', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![value.to_string()])?;
+        Ok(value)
     }
 
     pub fn save_dj_set(&mut self, set: &crate::dj::DjSetDto, prompt: &str) -> LibraryResult<()> {
         let tx = self.conn.transaction()?;
         tx.execute("INSERT INTO dj_sessions (id, initial_prompt, state, created_at) VALUES (?1, ?2, 'active', ?3) ON CONFLICT(id) DO UPDATE SET state = 'active', ended_at = NULL", params![set.session_id, prompt.trim(), set.created_at])?;
         tx.execute(
-            "INSERT INTO dj_sets (id, session_id, prompt, title, rationale, narration, model, generation_mode, track_ids_json, track_reasons_json, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-            params![set.id, set.session_id, prompt.trim(), set.title, set.rationale, set.narration, set.model, set.generation_mode, serde_json::to_string(&set.track_ids).map_err(|error| LibraryError::Metadata(error.to_string()))?, serde_json::to_string(&set.track_reasons).map_err(|error| LibraryError::Metadata(error.to_string()))?, set.created_at],
+            "INSERT INTO dj_sets (id, session_id, prompt, title, rationale, narration, model, generation_mode, track_ids_json, track_reasons_json, created_at, sequence, lifecycle_state) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            params![set.id, set.session_id, prompt.trim(), set.title, set.rationale, set.narration, set.model, set.generation_mode, serde_json::to_string(&set.track_ids).map_err(|error| LibraryError::Metadata(error.to_string()))?, serde_json::to_string(&set.track_reasons).map_err(|error| LibraryError::Metadata(error.to_string()))?, set.created_at, set.sequence, set.state],
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn record_dj_feedback(&mut self, session_id: &str, track_id: &str, sentiment: &str) -> LibraryResult<()> {
+        if !matches!(sentiment.trim(), "more" | "less") {
+            return Err(LibraryError::InvalidInput("DJ feedback must be more or less".to_owned()));
+        }
+        let valid: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM dj_sessions WHERE id = ?1 AND state = 'active') AND EXISTS(SELECT 1 FROM tracks WHERE id = ?2)",
+            params![session_id.trim(), track_id.trim()], |row| row.get(0),
+        )?;
+        if !valid { return Err(LibraryError::NotFound("active DJ session or track".to_owned())); }
+        self.conn.execute(
+            "INSERT INTO dj_feedback (session_id, track_id, sentiment, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![session_id.trim(), track_id.trim(), sentiment.trim(), now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_dj_recovery(&mut self, session_id: &str, current_set_id: &str, ordinary: &crate::dj::DjQueueSnapshotDto, dj_queue: &crate::dj::DjQueueSnapshotDto) -> LibraryResult<()> {
+        if ordinary.queue.len() > 500 || dj_queue.queue.len() > 500 || ordinary.current_track_id.as_deref().is_some_and(|value| value.len() > 160) || dj_queue.current_track_id.as_deref().is_some_and(|value| value.len() > 160) {
+            return Err(LibraryError::InvalidInput("DJ recovery queue is too large".to_owned()));
+        }
+        let ordinary_encoded = serde_json::to_string(ordinary).map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let dj_encoded = serde_json::to_string(dj_queue).map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let changed = self.conn.execute(
+            "UPDATE dj_sessions SET ordinary_queue_json = ?2, dj_queue_json = ?3, current_set_id = ?4, queue_index = ?5, position_ms = ?6 WHERE id = ?1 AND state = 'active'",
+            params![session_id.trim(), ordinary_encoded, dj_encoded, current_set_id.trim(), dj_queue.queue_index as i64, dj_queue.position_ms.max(0)],
+        )?;
+        if changed == 0 { return Err(LibraryError::NotFound(format!("active DJ session {session_id}"))); }
+        Ok(())
+    }
+
+    pub fn get_dj_recovery(&self) -> LibraryResult<Option<crate::dj::DjRecoveryDto>> {
+        let session = self.conn.query_row(
+            "SELECT id, current_set_id, ordinary_queue_json, dj_queue_json FROM dj_sessions WHERE state = 'active' AND current_set_id IS NOT NULL AND ordinary_queue_json <> '' AND dj_queue_json <> '' ORDER BY created_at DESC LIMIT 1",
+            [], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?)),
+        ).optional()?;
+        let Some((session_id, set_id, ordinary_json, dj_json)) = session else { return Ok(None); };
+        let ordinary_queue = serde_json::from_str::<crate::dj::DjQueueSnapshotDto>(&ordinary_json).map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let dj_queue = serde_json::from_str::<crate::dj::DjQueueSnapshotDto>(&dj_json).map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let set = self.conn.query_row(
+            "SELECT id, session_id, title, rationale, narration, model, generation_mode, track_ids_json, track_reasons_json, created_at, sequence, lifecycle_state FROM dj_sets WHERE id = ?1",
+            params![set_id], |row| {
+                let track_ids: String = row.get(7)?;
+                let reasons: String = row.get(8)?;
+                Ok(crate::dj::DjSetDto {
+                    id: row.get(0)?, session_id: row.get(1)?, title: row.get(2)?, rationale: row.get(3)?, narration: row.get(4)?, model: row.get(5)?, generation_mode: row.get(6)?,
+                    track_ids: serde_json::from_str(&track_ids).unwrap_or_default(), track_reasons: serde_json::from_str(&reasons).unwrap_or_default(), fallback_reason: None,
+                    created_at: row.get(9)?, sequence: row.get(10)?, state: row.get(11)?,
+                })
+            },
+        ).optional()?;
+        Ok(set.map(|current_set| crate::dj::DjRecoveryDto { session_id, current_set, ordinary_queue, dj_queue }))
     }
 
     pub fn end_dj_session(&mut self, session_id: &str) -> LibraryResult<()> {
@@ -2148,7 +2256,7 @@ mod tests {
     fn migrations_create_the_persistent_schema() {
         let root = temp_root("migrations");
         let repository = LibraryRepository::open_in_memory(&root).unwrap();
-        assert_eq!(repository.schema_version().unwrap(), 6);
+        assert_eq!(repository.schema_version().unwrap(), 7);
         let tables: i64 = repository
             .conn
             .query_row(
@@ -2277,10 +2385,12 @@ mod tests {
             generation_mode: "luna".to_owned(),
             track_ids: vec![track_id.clone()],
             track_reasons: vec![TrackReasonDto {
-                track_id,
+                track_id: track_id.clone(),
                 reason: "Signal".to_owned(),
             }],
             fallback_reason: None,
+            sequence: 0,
+            state: "active".to_owned(),
             created_at: now_ms(),
         };
         repository.save_dj_set(&set, "keep it moving").unwrap();
@@ -2289,6 +2399,19 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM dj_sets", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+        repository.record_dj_feedback("session-1", &track_id, "more").unwrap();
+        let signals = repository.listening_signals().unwrap();
+        assert_eq!(signals.pointer("/feedback/0/more").and_then(serde_json::Value::as_i64), Some(1));
+        let snapshot = crate::dj::DjQueueSnapshotDto {
+            queue: vec![QueueItemDto { id: "queue-1".to_owned(), track_id: track_id.clone(), added_at: now_ms(), source: "user".to_owned() }],
+            queue_index: 0,
+            current_track_id: Some(track_id),
+            position_ms: 250,
+        };
+        repository.save_dj_recovery("session-1", "set-1", &snapshot, &snapshot).unwrap();
+        let recovery = repository.get_dj_recovery().unwrap().unwrap();
+        assert_eq!(recovery.current_set.sequence, 0);
+        assert_eq!(recovery.dj_queue.position_ms, 250);
         repository.end_dj_session("session-1").unwrap();
     }
 
