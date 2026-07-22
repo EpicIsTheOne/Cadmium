@@ -23,6 +23,7 @@ export function DjPanel({ library, open, onClose, provider }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [voiceQuery, setVoiceQuery] = useState("warm radio host");
   const [voices, setVoices] = useState<readonly FishVoice[]>([]);
+  const [changingVoice, setChangingVoice] = useState(false);
   const [phase, setPhase] = useState<"idle" | "generating" | "speaking" | "ending">("idle");
   const [caption, setCaption] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export function DjPanel({ library, open, onClose, provider }: Props) {
       setCurrentSet(set);
       setChat((lines) => [...lines, { id: `dj-${set.id}`, role: "dj", text: `${set.narration}${set.generationMode === "local_fallback" ? " · Local fallback" : ""}` }]);
       if (refill) {
-        playbackStore.enqueueCollection(set.trackIds, "dj");
+        await playbackStore.appendDjCollectionAndContinue(set.trackIds);
         refillRequested.current = false;
       } else {
         await speak(set.narration);
@@ -132,6 +133,7 @@ export function DjPanel({ library, open, onClose, provider }: Props) {
   const selectVoice = async (voice: FishVoice) => {
     await provider.selectFishVoice(voice.id, voice.title);
     setVoices([]);
+    setChangingVoice(false);
     await refreshStatus();
   };
 
@@ -143,9 +145,9 @@ export function DjPanel({ library, open, onClose, provider }: Props) {
     <div className="dj-panel-scroll">
       <p className="dj-disclosure">Track metadata and listening signals go to Luna. Narration text goes to Fish Audio. Paths and artwork stay local.</p>
       {!status ? <p className="dj-muted">Checking Luna and Fish Audio…</p> : null}
-      {status ? <section className="dj-service-line"><span className={status.lunaAvailable ? "is-ready" : "is-fallback"}>{status.lunaAvailable ? "Luna 5.6 ready" : "Luna unavailable · local fallback"}</span>{status.fish.voiceLabel ? <span>{status.fish.voiceLabel}</span> : null}</section> : null}
+      {status ? <section className="dj-service-line"><span className={status.lunaAvailable ? "is-ready" : "is-fallback"}>{status.lunaAvailable ? "Luna 5.6 ready" : "Luna unavailable · local fallback"}</span>{status.fish.voiceLabel ? <button className="dj-change-voice" onClick={() => { setChangingVoice(true); setVoices([]); }} type="button">{status.fish.voiceLabel} · Change</button> : null}</section> : null}
       {status && !configured ? <section className="dj-setup"><span>1 · Voice service</span><h3>Connect Fish Audio</h3><p>{status.fish.message}</p><input autoComplete="off" onChange={(event) => setApiKey(event.target.value)} placeholder="Fish Audio API key" type="password" value={apiKey} /><button disabled={!apiKey.trim()} onClick={() => void saveCredential()} type="button">Store securely</button></section> : null}
-      {configured && !status?.fish.voiceId ? <section className="dj-setup"><span>2 · DJ voice</span><h3>Choose the voice</h3><div className="dj-search"><input onChange={(event) => setVoiceQuery(event.target.value)} value={voiceQuery} /><button onClick={() => void searchVoices()} type="button"><Icon name="search" size={14} />Search</button></div>{voices.map((voice) => <button className="dj-voice" key={voice.id} onClick={() => void selectVoice(voice)} type="button"><strong>{voice.title}</strong><small>{voice.matchReasons.slice(0, 2).join(" · ") || voice.languages.join(", ")}</small></button>)}</section> : null}
+      {configured && (!status?.fish.voiceId || changingVoice) ? <section className="dj-setup"><span>2 · DJ voice</span><h3>{status?.fish.voiceId ? "Change the voice" : "Choose the voice"}</h3><div className="dj-search"><input onChange={(event) => setVoiceQuery(event.target.value)} value={voiceQuery} /><button onClick={() => void searchVoices()} type="button"><Icon name="search" size={14} />Search</button></div>{voices.map((voice) => <button className="dj-voice" key={voice.id} onClick={() => void selectVoice(voice)} type="button"><strong>{voice.title}</strong><small>{voice.matchReasons.slice(0, 2).join(" · ") || voice.languages.join(", ")}</small></button>)}{status?.fish.voiceId ? <button className="dj-cancel-voice" onClick={() => { setChangingVoice(false); setVoices([]); }} type="button">Keep current voice</button> : null}</section> : null}
       {ready ? <><div className="dj-chat">{chat.length ? chat.map((line) => <article className={`dj-message is-${line.role}`} key={line.id}><small>{line.role === "dj" ? "DJ" : "You"}</small><p>{line.text}</p></article>) : <p className="dj-muted">Opening the booth and reading your library signal…</p>}</div>{caption ? <div aria-live="polite" className="dj-caption"><Icon name="spark" size={14} /><span>{caption}</span></div> : null}</> : null}
       {error ? <div className="dj-error" role="alert">{error}</div> : null}
     </div>

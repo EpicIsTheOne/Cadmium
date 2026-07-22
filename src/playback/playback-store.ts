@@ -158,13 +158,18 @@ export class PlaybackStore {
     return trackId ? this.library.tracksById[trackId] ?? null : null;
   }
 
-  async playTrack(trackId: TrackId) {
+  async playTrack(trackId: TrackId, queueIndexHint?: number) {
     const track = this.library.tracksById[trackId];
     if (!track || !track.available || track.source.kind !== "local-file" || !track.source.locator) {
       this.setState({ error: "This track is unavailable until the watched folder is rescanned." });
       return;
     }
-    const queueIndex = this.state.queue.findIndex((item) => item.trackId === trackId);
+    const hintedItem = queueIndexHint === undefined ? undefined : this.state.queue[queueIndexHint];
+    const queueIndex = hintedItem?.trackId === trackId
+      ? queueIndexHint as number
+      : this.state.queue[this.state.queueIndex]?.trackId === trackId
+        ? this.state.queueIndex
+        : this.state.queue.findIndex((item) => item.trackId === trackId);
     if (queueIndex < 0) {
       const queueItem = this.createQueueItem(trackId);
       this.state = {
@@ -317,6 +322,20 @@ export class PlaybackStore {
     this.persistQueue();
   }
 
+  async appendDjCollectionAndContinue(trackIds: readonly TrackId[]) {
+    const items = trackIds.filter((trackId) => this.library.tracksById[trackId]?.available).map((trackId) => this.createQueueItem(trackId, "dj"));
+    if (!items.length) return;
+    const firstNewIndex = this.state.queue.length;
+    const oldLastIndex = firstNewIndex - 1;
+    const stoppedAtBoundary = !this.state.isPlaying
+      && this.state.queueIndex >= oldLastIndex
+      && this.state.durationMs > 0
+      && this.state.positionMs >= Math.max(0, this.state.durationMs - 1_000);
+    this.setState({ queue: [...this.state.queue, ...items] });
+    this.persistQueue();
+    if (stoppedAtBoundary) await this.playQueueIndex(firstNewIndex);
+  }
+
   setDjSession(sessionId: string | null) {
     this.djSessionId = sessionId;
   }
@@ -381,7 +400,7 @@ export class PlaybackStore {
       return;
     }
     this.setState({ queueIndex });
-    await this.playTrack(item.trackId);
+    await this.playTrack(item.trackId, queueIndex);
   }
 
   private async handleEnded() {
