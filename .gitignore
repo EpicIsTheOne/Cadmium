@@ -6,3 +6,8 @@ src-tauri/gen
 .env
 .env.*
 !.env.example
+
+# Local agent / scratch state (not project source)
+.hermes/
+_cap.ps1
+*-test.html
