@@ -75,6 +75,22 @@ export class EmptyMusicProvider implements MusicProvider {
   async removeTrackFromAlbum(_trackId: TrackId): Promise<boolean> {
     return false;
   }
+
+  async setCollectionArtwork(_dataUrl: string): Promise<string> {
+    throw new Error("Empty provider has no persistence");
+  }
+
+  async resolveArtistByName(_name: string): Promise<ArtistId | null> {
+    return null;
+  }
+
+  async updatePlaylist(_playlistId: PlaylistId, _patch: { name?: string; description?: string; artwork?: string }): Promise<boolean> {
+    return false;
+  }
+
+  async updateAlbum(_albumId: AlbumId, _patch: { title?: string; description?: string; artwork?: string; artistId?: ArtistId | null }): Promise<boolean> {
+    return false;
+  }
 }
 
 export const createEmptyMusicProvider = (): MusicProvider =>

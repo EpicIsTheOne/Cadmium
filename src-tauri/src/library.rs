@@ -259,6 +259,13 @@ const MIGRATIONS: &[(i64, &str)] = &[
         CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
         "#
     ),
+    (
+        11,
+        r#"
+        ALTER TABLE albums ADD COLUMN description TEXT NOT NULL DEFAULT '';
+        ALTER TABLE playlists ADD COLUMN artwork_ref TEXT;
+        "#
+    ),
 ];
 
 #[derive(Debug)]
@@ -326,6 +333,7 @@ pub struct AlbumDto {
     pub title: String,
     pub artist_ids: Vec<String>,
     pub year: Option<i64>,
+    pub description: String,
     pub artwork_path: Option<String>,
 }
 
@@ -364,6 +372,7 @@ pub struct PlaylistDto {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub artwork_path: Option<String>,
     pub track_ids: Vec<String>,
 }
 
@@ -853,6 +862,7 @@ impl LibraryRepository {
                 id: playlist.id,
                 name: playlist.name,
                 description: playlist.rationale,
+                artwork_path: None,
                 track_ids: playlist.track_ids,
             })
             .chain(self.get_user_playlists()?.into_iter())
@@ -1626,6 +1636,147 @@ impl LibraryRepository {
         Ok(album_id)
     }
 
+    pub fn update_playlist(
+        &mut self,
+        playlist_id: &str,
+        name: Option<&str>,
+        description: Option<&str>,
+        artwork_ref: Option<&str>,
+    ) -> LibraryResult<bool> {
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LibraryError::NotFound(format!("playlist {playlist_id}")));
+        }
+        if let Some(raw_name) = name {
+            let name = raw_name.trim().to_owned();
+            if name.is_empty() || name.chars().count() > 120 {
+                return Err(LibraryError::InvalidInput(
+                    "playlist name must be 1 to 120 characters".to_owned(),
+                ));
+            }
+            self.conn.execute(
+                "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                params![name, now_ms(), playlist_id],
+            )?;
+        }
+        if let Some(description) = description {
+            self.conn.execute(
+                "UPDATE playlists SET description = ?1, updated_at = ?2 WHERE id = ?3",
+                params![description, now_ms(), playlist_id],
+            )?;
+        }
+        if let Some(artwork_ref) = artwork_ref {
+            self.conn.execute(
+                "UPDATE playlists SET artwork_ref = ?1 WHERE id = ?2",
+                params![artwork_ref, playlist_id],
+            )?;
+        }
+        Ok(true)
+    }
+
+    pub fn update_album(
+        &mut self,
+        album_id: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+        artwork_ref: Option<&str>,
+        artist_id: Option<&str>,
+    ) -> LibraryResult<bool> {
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM albums WHERE id = ?1)",
+            params![album_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LibraryError::NotFound(format!("album {album_id}")));
+        }
+        if let Some(raw_title) = title {
+            let title = raw_title.trim().to_owned();
+            if title.is_empty() || title.chars().count() > 200 {
+                return Err(LibraryError::InvalidInput(
+                    "album title must be 1 to 200 characters".to_owned(),
+                ));
+            }
+            self.conn.execute(
+                "UPDATE albums SET title = ?1, normalized_title = ?2 WHERE id = ?3",
+                params![title, normalize_text(&title), album_id],
+            )?;
+        }
+        if let Some(description) = description {
+            self.conn.execute(
+                "UPDATE albums SET description = ?1 WHERE id = ?2",
+                params![description, album_id],
+            )?;
+        }
+        if let Some(artwork_ref) = artwork_ref {
+            self.conn.execute(
+                "UPDATE albums SET artwork_ref = ?1 WHERE id = ?2",
+                params![artwork_ref, album_id],
+            )?;
+        }
+        if let Some(artist_id) = artist_id {
+            let artist = artist_id
+                .trim()
+                .is_empty()
+                .then_some(None)
+                .unwrap_or(Some(artist_id.trim()));
+            self.conn.execute(
+                "DELETE FROM album_artists WHERE album_id = ?1",
+                params![album_id],
+            )?;
+            if let Some(artist_id) = artist {
+                let artist_exists: bool = self.conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM artists WHERE id = ?1)",
+                    params![artist_id],
+                    |row| row.get(0),
+                )?;
+                if artist_exists {
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO album_artists (album_id, artist_id, position) VALUES (?1, ?2, 0)",
+                        params![album_id, artist_id],
+                    )?;
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn set_collection_artwork(&mut self, data_url: &str) -> LibraryResult<String> {
+        let bytes = decode_data_url(data_url)?;
+        if bytes.is_empty() || bytes.len() > MAX_ARTWORK_BYTES || !valid_image_signature(&bytes) {
+            return Err(LibraryError::InvalidInput(
+                "artwork must be a supported image under 4 MB".to_owned(),
+            ));
+        }
+        let extension = image_extension(None, &bytes)
+            .ok_or_else(|| LibraryError::InvalidInput("unsupported image format".to_owned()))?;
+        let stamp = now_ms();
+        let filename = format!("uploaded-{stamp}.{extension}");
+        let target = self.artwork_dir.join(&filename);
+        fs::write(&target, &bytes)?;
+        Ok(format!("artwork/{filename}"))
+    }
+
+    pub fn resolve_artist_by_name(&self, name: &str) -> LibraryResult<Option<String>> {
+        let normalized = normalize_text(name);
+        if normalized.is_empty() {
+            return Ok(None);
+        }
+        let id: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM artists WHERE normalized_name = ?1 LIMIT 1",
+                params![normalized],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(id)
+    }
+
     pub fn remove_track_from_album(&mut self, track_id: &str) -> LibraryResult<bool> {
         self.conn.execute(
             "UPDATE tracks SET album_id = NULL WHERE id = ?1",
@@ -1636,7 +1787,7 @@ impl LibraryRepository {
 
     pub fn get_user_playlists(&self) -> LibraryResult<Vec<PlaylistDto>> {
         let mut statement = self.conn.prepare(
-            "SELECT id, name, description, created_at FROM playlists ORDER BY created_at DESC",
+            "SELECT id, name, description, artwork_ref, created_at FROM playlists ORDER BY created_at DESC",
         )?;
         let rows = statement
             .query_map([], |row| {
@@ -1644,12 +1795,13 @@ impl LibraryRepository {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         let mut playlists = Vec::new();
-        for (id, name, description, _created_at) in rows {
+        for (id, name, description, artwork_ref, _created_at) in rows {
             let mut tracks_statement = self.conn.prepare(
                 "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
             )?;
@@ -1660,6 +1812,7 @@ impl LibraryRepository {
                 id,
                 name,
                 description,
+                artwork_path: artwork_ref.and_then(|value| self.resolve_artwork_ref(&value)),
                 track_ids,
             });
         }
@@ -2313,17 +2466,18 @@ impl LibraryRepository {
         }
 
         let mut statement = self.conn.prepare(
-            "SELECT id, title, year, artwork_ref FROM albums ORDER BY normalized_title, id",
+            "SELECT id, title, year, description, artwork_ref FROM albums ORDER BY normalized_title, id",
         )?;
         let albums = statement
             .query_map([], |row| {
                 let id: String = row.get(0)?;
-                let artwork_ref: Option<String> = row.get(3)?;
+                let artwork_ref: Option<String> = row.get(4)?;
                 Ok(AlbumDto {
                     artist_ids: artists_by_album.get(&id).cloned().unwrap_or_default(),
                     id,
                     title: row.get(1)?,
                     year: row.get(2)?,
+                    description: row.get(3)?,
                     artwork_path: artwork_ref.and_then(|value| self.resolve_artwork_ref(&value)),
                 })
             })?
@@ -2549,6 +2703,24 @@ fn read_audio_metadata(path: &Path, artwork_dir: &Path) -> LibraryResult<RawMeta
 fn parse_tag_number(tag: &lofty::tag::Tag, key: ItemKey) -> Option<i64> {
     tag.get_string(&key)
         .and_then(|value| value.split('/').next()?.trim().parse().ok())
+}
+
+fn decode_data_url(data_url: &str) -> LibraryResult<Vec<u8>> {
+    let comma = data_url
+        .find(',')
+        .ok_or_else(|| LibraryError::InvalidInput("invalid data URL".to_owned()))?;
+    let meta = &data_url[..comma];
+    let payload = &data_url[comma + 1..];
+    if !meta.starts_with("data:") || !meta.contains(";base64") {
+        return Err(LibraryError::InvalidInput(
+            "artwork must be a base64 data URL".to_owned(),
+        ));
+    }
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    STANDARD
+        .decode(payload.trim())
+        .map_err(|error| LibraryError::InvalidInput(format!("artwork decode failed: {error}")))
 }
 
 fn save_artwork(

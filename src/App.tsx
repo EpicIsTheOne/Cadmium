@@ -360,6 +360,8 @@ export default function App() {
         onNavigate={navigate}
         onOpenCollection={openCollection}
         provider={provider.descriptor}
+        musicProvider={provider instanceof LocalLibraryProvider ? provider : null}
+        onCollectionChanged={loadLibrary}
       />
 
       <main className="workspace" id="main-content">

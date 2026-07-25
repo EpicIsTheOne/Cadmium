@@ -393,6 +393,58 @@ pub fn create_album(
 }
 
 #[tauri::command]
+pub fn update_playlist(
+    state: State<'_, AppState>,
+    playlist_id: String,
+    name: Option<String>,
+    description: Option<String>,
+    artwork_ref: Option<String>,
+) -> Result<bool, String> {
+    lock_repository(&state)?
+        .update_playlist(
+            playlist_id.trim(),
+            name.as_deref().map(|value| value.trim()),
+            description.as_deref(),
+            artwork_ref.as_deref(),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_album(
+    state: State<'_, AppState>,
+    album_id: String,
+    title: Option<String>,
+    description: Option<String>,
+    artwork_ref: Option<String>,
+    artist_id: Option<String>,
+) -> Result<bool, String> {
+    lock_repository(&state)?
+        .update_album(
+            album_id.trim(),
+            title.as_deref().map(|value| value.trim()),
+            description.as_deref(),
+            artwork_ref.as_deref(),
+            artist_id.as_deref(),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_collection_artwork(state: State<'_, AppState>, data_url: String) -> Result<String, String> {
+    lock_repository(&state)?
+        .set_collection_artwork(&data_url)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn resolve_artist_by_name(state: State<'_, AppState>, name: String) -> Result<Option<String>, String> {
+    lock_repository(&state)?
+        .resolve_artist_by_name(&name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn remove_track_from_album(
     state: State<'_, AppState>,
     track_id: String,

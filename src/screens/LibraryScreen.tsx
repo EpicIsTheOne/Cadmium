@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { AlbumId, MusicProvider, NormalizedLibrary, TrackId } from "../domain/media";
+import type { AlbumId, MusicProvider, NormalizedLibrary, PlaylistId, TrackId } from "../domain/media";
 import { playbackStore } from "../playback/playback-store";
 import type { WatchedFolder } from "../providers/local-library-provider";
 import type { CollectionKind } from "../components/Sidebar";
 import { EmptyState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { TrackMenu } from "../components/TrackMenu";
+import { CollectionEditModal, type CollectionEditMode, type CollectionEditValues } from "../components/CollectionEditModal";
 import orbitArt from "../assets/cadmium-orbit.svg";
 
 interface LibraryScreenProps {
@@ -43,6 +44,19 @@ export function LibraryScreen({
   onLibraryChanged,
 }: LibraryScreenProps) {
   const favoriteSet = new Set(favoriteTrackIds);
+  const [editState, setEditState] = useState<{ mode: CollectionEditMode; id: string; initial: CollectionEditValues } | null>(null);
+
+  const openEditPlaylist = (playlist: { id: string; name: string; description?: string; artwork?: { src: string } }) => {
+    setEditState({ mode: "edit-playlist", id: playlist.id, initial: { name: playlist.name, description: playlist.description ?? "", artist: "", artworkDataUrl: playlist.artwork?.src } });
+  };
+
+  const submitEdit = async (values: CollectionEditValues) => {
+    if (!provider) return;
+    const id = editState?.id as PlaylistId;
+    await provider.updatePlaylist(id, { name: values.name, description: values.description, artwork: values.artworkDataUrl });
+    onLibraryChanged();
+    setEditState(null);
+  };
   return (
     <div className="library">
       <header className="library-header">
@@ -119,26 +133,39 @@ export function LibraryScreen({
               const trackCount = playlist.trackIds.length;
               return (
                 <article className="playlist-card" key={playlist.id}>
-                  <button
-                    className="playlist-cover"
-                    onClick={() => onOpenCollection("playlist", playlist.id)}
-                    type="button"
-                    aria-label={`Open ${playlist.name}`}
-                  >
-                    {playlist.artwork ? (
-                      <img src={playlist.artwork.src} alt="" />
-                    ) : (
-                      <span className="playlist-cover-fallback"><Icon name="spark" size={20} /></span>
-                    )}
-                    <span
-                      className="playlist-play"
-                      aria-hidden="true"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (trackCount) void playbackStore.playCollection(playlist.trackIds, "playlist", 0, { id: playlist.id, title: playlist.name });
-                      }}
-                    ><Icon name="play" size={15} /></span>
-                  </button>
+                  <div className="playlist-cover-wrap">
+                    <button
+                      className="playlist-cover"
+                      onClick={() => onOpenCollection("playlist", playlist.id)}
+                      type="button"
+                      aria-label={`Open ${playlist.name}`}
+                    >
+                      {playlist.artwork ? (
+                        <img src={playlist.artwork.src} alt="" />
+                      ) : (
+                        <span className="playlist-cover-fallback"><Icon name="spark" size={20} /></span>
+                      )}
+                      <span
+                        className="playlist-play"
+                        aria-hidden="true"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (trackCount) void playbackStore.playCollection(playlist.trackIds, "playlist", 0, { id: playlist.id, title: playlist.name });
+                        }}
+                      ><Icon name="play" size={15} /></span>
+                    </button>
+                    {provider ? (
+                      <button
+                        aria-label={`Edit ${playlist.name}`}
+                        className="playlist-edit"
+                        onClick={() => openEditPlaylist(playlist)}
+                        title="Edit playlist"
+                        type="button"
+                      >
+                        <Icon name="pencil" size={14} />
+                      </button>
+                    ) : null}
+                  </div>
                   <button
                     className="playlist-meta"
                     onClick={() => onOpenCollection("playlist", playlist.id)}
@@ -221,6 +248,16 @@ export function LibraryScreen({
           />
         </div>
       )}
+
+      {editState ? (
+        <CollectionEditModal
+          initial={editState.initial}
+          mode={editState.mode}
+          provider={provider}
+          onCancel={() => setEditState(null)}
+          onSubmit={submitEdit}
+        />
+      ) : null}
     </div>
   );
 }

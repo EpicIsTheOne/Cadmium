@@ -41,6 +41,7 @@ interface BackendAlbum {
   title: string;
   artistIds: string[];
   year?: number | null;
+  description?: string | null;
   artworkPath?: string | null;
 }
 
@@ -73,6 +74,7 @@ interface BackendPlaylist {
   id: string;
   name: string;
   description: string;
+  artworkPath?: string | null;
   trackIds: string[];
 }
 
@@ -304,6 +306,40 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
 
   async createAlbum(title: string, artistId?: ArtistId | null): Promise<AlbumId> {
     return asAlbumId(await this.call<string>("create_album", { title, artistId: artistId ?? null }));
+  }
+
+  async setCollectionArtwork(dataUrl: string): Promise<string> {
+    return this.call<string>("set_collection_artwork", { dataUrl });
+  }
+
+  async resolveArtistByName(name: string): Promise<ArtistId | null> {
+    const id = await this.call<string | null>("resolve_artist_by_name", { name });
+    return id ? asArtistId(id) : null;
+  }
+
+  async updatePlaylist(
+    playlistId: PlaylistId,
+    patch: { name?: string; description?: string; artwork?: string },
+  ): Promise<boolean> {
+    return this.call<boolean>("update_playlist", {
+      playlistId,
+      name: patch.name,
+      description: patch.description,
+      artworkRef: patch.artwork,
+    });
+  }
+
+  async updateAlbum(
+    albumId: AlbumId,
+    patch: { title?: string; description?: string; artwork?: string; artistId?: ArtistId | null },
+  ): Promise<boolean> {
+    return this.call<boolean>("update_album", {
+      albumId,
+      title: patch.title,
+      description: patch.description,
+      artworkRef: patch.artwork,
+      artistId: patch.artistId ?? null,
+    });
   }
 
   async removeTrackFromAlbum(trackId: TrackId): Promise<boolean> {
@@ -559,6 +595,7 @@ function mapLibrary(backend: BackendLibrary): NormalizedLibrary {
       title: album.title,
       artistIds: album.artistIds.map(asArtistId),
       year: album.year ?? undefined,
+      description: album.description ?? undefined,
       artwork: artwork(album.artworkPath, album.title),
     };
   }
@@ -588,6 +625,7 @@ function mapLibrary(backend: BackendLibrary): NormalizedLibrary {
       id: asPlaylistId(playlist.id),
       name: playlist.name,
       description: playlist.description,
+      artwork: artwork(playlist.artworkPath, playlist.name),
       trackIds: playlist.trackIds.map(asTrackId),
     };
   }
@@ -695,6 +733,18 @@ export function createMusicProvider(): MusicProvider {
       return false;
     },
     async removeTrackFromAlbum() {
+      return false;
+    },
+    async setCollectionArtwork() {
+      throw new Error("Desktop provider unavailable");
+    },
+    async resolveArtistByName() {
+      return null;
+    },
+    async updatePlaylist() {
+      return false;
+    },
+    async updateAlbum() {
       return false;
     },
   };

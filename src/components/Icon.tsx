@@ -35,7 +35,8 @@ export type IconName =
   | "menu"
   | "logo"
   | "check"
-  | "trash";
+  | "trash"
+  | "pencil";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -123,6 +124,10 @@ export function Icon({ name, size = 18, ...props }: IconProps) {
         return <><path d="m5 12.5 4.5 4.5L19 7" /></>;
       case "trash":
         return <><path d="M5 7h14M9.5 7V5h5v2M7 7l1 12h8l1-12" /></>;
+      case "pencil":
+        return <><path d="M4 20h4L19.5 8.5a2 2 0 0 0-2.8-2.8L5 17.2V20Z" /><path d="M14.5 6.5l3 3" /></>;
+      default:
+        return null;
     }
   })();
 

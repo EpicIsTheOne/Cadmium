@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { AlbumId, ArtistId, MusicProvider, NormalizedLibrary, PlaylistId, Track, TrackId } from "../domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { Icon } from "../components/Icon";
 import { TrackMenu } from "../components/TrackMenu";
+import { CollectionEditModal, type CollectionEditMode, type CollectionEditValues } from "../components/CollectionEditModal";
 import gridArt from "../assets/cadmium-grid.svg";
 import orbitArt from "../assets/cadmium-orbit.svg";
 
@@ -102,6 +103,34 @@ export function CollectionDetailScreen({
   const playable = tracks.filter((track) => track.available);
   const totalMs = tracks.reduce((sum, track) => sum + track.durationMs, 0);
   const isPlaylist = kind === "playlist";
+  const [editState, setEditState] = useState<{ mode: CollectionEditMode; initial: CollectionEditValues } | null>(null);
+
+  const openEdit = () => {
+    if (kind === "playlist") {
+      const playlist = library.playlistsById[id as PlaylistId];
+      setEditState({ mode: "edit-playlist", initial: { name: playlist?.name ?? title, description: playlist?.description ?? "", artist: "", artworkDataUrl: playlist?.artwork?.src } });
+    } else if (kind === "album") {
+      const album = library.albumsById[id as AlbumId];
+      const artistName = album?.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") ?? "";
+      setEditState({ mode: "edit-album", initial: { name: album?.title ?? title, description: album?.description ?? "", artist: artistName, artworkDataUrl: album?.artwork?.src } });
+    }
+  };
+
+  const submitEdit = async (values: CollectionEditValues) => {
+    if (!provider) return;
+    if (kind === "playlist") {
+      await provider.updatePlaylist(id as PlaylistId, { name: values.name, description: values.description, artwork: values.artworkDataUrl });
+    } else if (kind === "album") {
+      let artistId: ArtistId | null = null;
+      if (values.artist) {
+        const existing = await provider.resolveArtistByName(values.artist);
+        artistId = existing;
+      }
+      await provider.updateAlbum(id as AlbumId, { title: values.name, description: values.description, artwork: values.artworkDataUrl, artistId });
+    }
+    onLibraryChanged();
+    setEditState(null);
+  };
 
   const playAll = () => {
     if (!playable.length) return;
@@ -128,6 +157,17 @@ export function CollectionDetailScreen({
         <div className="collection-hero-copy">
           <span className="eyebrow">{eyebrow}</span>
           <h1 className="collection-title">{title}</h1>
+          {isPlaylist || kind === "album" ? (
+            <button
+              aria-label="Edit collection"
+              className="collection-edit-button"
+              onClick={openEdit}
+              title="Edit"
+              type="button"
+            >
+              <Icon name="pencil" size={15} />
+            </button>
+          ) : null}
           {description ? <p className="collection-description">{description}</p> : null}
           <div className="collection-meta">
             <span className="collection-meta-artist">{artistName}</span>
@@ -277,6 +317,16 @@ export function CollectionDetailScreen({
           </div>
         )}
       </section>
+
+      {editState ? (
+        <CollectionEditModal
+          initial={editState.initial}
+          mode={editState.mode}
+          provider={provider}
+          onCancel={() => setEditState(null)}
+          onSubmit={submitEdit}
+        />
+      ) : null}
     </div>
   );
 }

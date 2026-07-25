@@ -41,6 +41,7 @@ export interface Album {
   readonly title: string;
   readonly artistIds: readonly ArtistId[];
   readonly year?: number;
+  readonly description?: string;
   readonly artwork?: Artwork;
 }
 
@@ -129,6 +130,19 @@ export interface MusicProvider {
   createAlbum(title: string, artistId?: ArtistId | null): Promise<AlbumId>;
   setTrackAlbum(trackId: TrackId, albumId: AlbumId): Promise<boolean>;
   removeTrackFromAlbum(trackId: TrackId): Promise<boolean>;
+
+  /** Persist a base64 data-URL as collection artwork; returns an artwork ref usable for updates. */
+  setCollectionArtwork(dataUrl: string): Promise<string>;
+  /** Resolve an existing artist id by display name, or null if none matches. */
+  resolveArtistByName(name: string): Promise<ArtistId | null>;
+  updatePlaylist(
+    playlistId: PlaylistId,
+    patch: { name?: string; description?: string; artwork?: string },
+  ): Promise<boolean>;
+  updateAlbum(
+    albumId: AlbumId,
+    patch: { title?: string; description?: string; artwork?: string; artistId?: ArtistId | null },
+  ): Promise<boolean>;
 }
 
 export const emptyLibrary = (): NormalizedLibrary => ({
