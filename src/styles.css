@@ -3080,7 +3080,8 @@ body { background:#02040b; }
 .fullscreen-bottom-bar{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;align-items:center;gap:22px;padding:16px 26px;background:linear-gradient(0deg,rgba(4,5,12,.82),rgba(4,5,12,0));pointer-events:auto}
 .fullscreen-bottom-bar .fs-bb-transport{display:flex;align-items:center;gap:14px}
 .fullscreen-bottom-bar .fs-bb-transport .play-button{width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.16);color:#0a0b14;background:#36e0a8;display:inline-flex;align-items:center;justify-content:center}
-.fullscreen-bottom-bar .fs-bb-transport button:not(.play-button){color:#cfc8db;background:transparent}
+.fullscreen-bottom-bar button{background:transparent;color:#cfc8db;border:0}
+.fullscreen-bottom-bar .play-button{background:#36e0a8;color:#0a0b14}
 .fullscreen-bottom-bar .fs-bb-progress{flex:1;display:flex;align-items:center;gap:12px}
 .fullscreen-bottom-bar .fs-bb-progress time{font-size:12px;color:#bdb6c8;min-width:40px;text-align:center}
 .fullscreen-bottom-bar .fs-bb-progress input[type=range]{flex:1}

@@ -46,7 +46,7 @@ void main(){
   p += normalize(p) * (uBass*uReach + uBeat*uBurst + sin(uTime+aSeed*10.0)*0.05);
   vGlow = 0.35 + uBeat*0.35 + uLevel*0.25;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_PointSize = (2.0 + uBeat*4.0) * (300.0 / -mv.z);
+  gl_PointSize = clamp((2.0 + uBeat*3.0) * (300.0 / -mv.z), 1.0, 36.0);
   gl_Position = projectionMatrix * mv;
 }`;
 
