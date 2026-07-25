@@ -17,13 +17,15 @@ export interface ThemeDef {
   /** Re-tuned global token overrides so the whole shell follows the theme. */
   violet: string;
   blue: string;
+  /** Translucent border/tint color derived from the accent (for panel lines). */
+  accentLine: string;
 }
 
 export const THEMES: ThemeDef[] = [
-  { id: "nocturne", name: "Cadmium nocturne", accent: "#36e0a8", accent2: "#1fb889", glow: "rgba(54, 224, 168, 0.16)", swatch: "#36e0a8", violet: "#36e0a8", blue: "#5d80ff" },
-  { id: "ember", name: "Ember dusk", accent: "#ff7c65", accent2: "#ffb45e", glow: "rgba(255, 124, 101, 0.16)", swatch: "#ff7c65", violet: "#ff7c65", blue: "#ffb45e" },
-  { id: "violet", name: "Violet signal", accent: "#a06bff", accent2: "#725bff", glow: "rgba(160, 107, 255, 0.18)", swatch: "#a06bff", violet: "#a06bff", blue: "#725bff" },
-  { id: "azure", name: "Azure drift", accent: "#5f9bff", accent2: "#5d80ff", glow: "rgba(95, 155, 255, 0.16)", swatch: "#5f9bff", violet: "#8a6bff", blue: "#5f9bff" },
+  { id: "nocturne", name: "Cadmium nocturne", accent: "#36e0a8", accent2: "#1fb889", glow: "rgba(54, 224, 168, 0.16)", swatch: "#36e0a8", violet: "#36e0a8", blue: "#5d80ff", accentLine: "rgba(54, 224, 168, 0.18)" },
+  { id: "ember", name: "Ember dusk", accent: "#ff7c65", accent2: "#ffb45e", glow: "rgba(255, 124, 101, 0.16)", swatch: "#ff7c65", violet: "#ff7c65", blue: "#ffb45e", accentLine: "rgba(255, 124, 101, 0.18)" },
+  { id: "violet", name: "Violet signal", accent: "#a06bff", accent2: "#725bff", glow: "rgba(160, 107, 255, 0.18)", swatch: "#a06bff", violet: "#a06bff", blue: "#725bff", accentLine: "rgba(160, 107, 255, 0.18)" },
+  { id: "azure", name: "Azure drift", accent: "#5f9bff", accent2: "#5d80ff", glow: "rgba(95, 155, 255, 0.16)", swatch: "#5f9bff", violet: "#8a6bff", blue: "#5f9bff", accentLine: "rgba(95, 155, 255, 0.18)" },
 ];
 
 const STORAGE_KEY = "cadmium.theme";
@@ -52,6 +54,7 @@ export function applyTheme(id: string): void {
   root.style.setProperty("--accent-glow", theme.glow);
   root.style.setProperty("--violet", theme.violet);
   root.style.setProperty("--blue", theme.blue);
+  root.style.setProperty("--accent-line", theme.accentLine);
   try {
     localStorage.setItem(STORAGE_KEY, theme.id);
   } catch {

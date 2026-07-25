@@ -14,6 +14,7 @@ describe("theme system", () => {
     expect(getThemeId()).toBe("violet");
     expect(document.documentElement.getAttribute("data-theme")).toBe("violet");
     expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#a06bff");
+    expect(document.documentElement.style.getPropertyValue("--accent-line")).toBe("rgba(160, 107, 255, 0.18)");
   });
 
   it("getTheme falls back to nocturne for unknown ids", () => {
