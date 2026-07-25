@@ -128,13 +128,24 @@ input:focus-visible {
 /* Ambient-active: make the shell background transparent so the canvas
    shows through the panels (frosted-glass effect), while keeping enough
    scrim that text + controls stay readable. The canvas is already dimmed
-   (opacity 0.6 + desaturate) so it reads as a subtle backdrop everywhere. */
-.app-shell.ambient-active { background: transparent; }
+   (opacity 0.6 + desaturate) so it reads as a subtle backdrop everywhere.
+   --ambient-energy (0..1, bass-weighted) is written by the ambient host and
+   drives the inner seam glow on the sidebar + context rail. */
+.app-shell.ambient-active { background: transparent; --ambient-energy: 0; }
 .app-shell.ambient-active .workspace { background: rgba(2, 3, 9, 0.62); }
 .app-shell.ambient-active .sidebar,
 .app-shell.ambient-active .context-panel,
 .app-shell.ambient-active .topbar,
 .app-shell.ambient-active .bottom-player { background: rgba(4, 6, 12, 0.78); }
+/* Inner seams glow with the music while ambient is on. */
+.app-shell.ambient-active .sidebar {
+  border-right: 1px solid var(--accent-line);
+  box-shadow: 1px 0 18px calc(2px + var(--ambient-energy) * 22px) var(--accent-glow);
+}
+.app-shell.ambient-active .context-panel {
+  border-left: 1px solid var(--accent-line);
+  box-shadow: -1px 0 18px calc(2px + var(--ambient-energy) * 22px) var(--accent-glow);
+}
 
 .app-shell.context-collapsed {
   grid-template-columns: 244px minmax(0, 1fr);

@@ -47,6 +47,10 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
   const vizColors = useRef<{ primary: string; secondary: string; background: string }>({ ...targetColors.current });
   // Throttle applySettings: only re-push color uniforms when they actually move.
   const lastApplied = useRef<{ primary: string; secondary: string; background: string } | null>(null);
+  // Smoothed music-energy (0..1) surfaced to the shell while the ambient host
+  // is active, so the sidebar / context seams can glow with the beat.
+  const energyRef = useRef(0);
+  const lastEnergy = useRef<string>("");
 
   const resolvedViz = selectedViz ?? (typeof localStorage !== "undefined" ? localStorage.getItem("cadmium.viz.selected") ?? DEFAULT_VISUALIZER_ID : DEFAULT_VISUALIZER_ID);
   const def = getVisualizerDef(resolvedViz);
@@ -152,9 +156,21 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
         lastApplied.current = { primary: cur.primary, secondary: cur.secondary, background: cur.background };
       }
       viz.update(frame, performance.now() / 1000);
+      // Surface a single music-energy value (0..1, bass-weighted) for the
+      // ambient shell: the sidebar / context seams glow with the beat.
+      // Only the ambient host writes it (stage/fullscreen don't tint the shell).
+      if (ambient && typeof document !== "undefined") {
+        const energy = Math.min(1, 0.55 * frame.bass + 0.45 * frame.level);
+        energyRef.current = Math.max(energyRef.current * 0.85, energy);
+        const e = energyRef.current.toFixed(3);
+        if (e !== lastEnergy.current) {
+          document.documentElement.style.setProperty("--ambient-energy", e);
+          lastEnergy.current = e;
+        }
+      }
     };
     let raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); canvas.removeEventListener("webglcontextlost", onLost as EventListener); canvas.removeEventListener("webglcontextrestored", onRestored as EventListener); viz.dispose(); };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); canvas.removeEventListener("webglcontextlost", onLost as EventListener); canvas.removeEventListener("webglcontextrestored", onRestored as EventListener); viz.dispose(); if (ambient && typeof document !== "undefined") { document.documentElement.style.removeProperty("--ambient-energy"); lastEnergy.current = ""; energyRef.current = 0; } };
   }, [def, resolvedSettings, artPalette, artSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Decode once per track: the same PCM powers the live visualizer.
