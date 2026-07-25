@@ -127,7 +127,7 @@ export function CollectionEditModal({ mode, initial, provider, onCancel, onSubmi
             </label>
           ) : null}
 
-          <label className="field">
+          <label className="field collection-edit-desc">
             <span>Description</span>
             <textarea
               onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))}

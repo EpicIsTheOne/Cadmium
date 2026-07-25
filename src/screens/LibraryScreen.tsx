@@ -154,17 +154,6 @@ export function LibraryScreen({
                         }}
                       ><Icon name="play" size={15} /></span>
                     </button>
-                    {provider ? (
-                      <button
-                        aria-label={`Edit ${playlist.name}`}
-                        className="playlist-edit"
-                        onClick={() => openEditPlaylist(playlist)}
-                        title="Edit playlist"
-                        type="button"
-                      >
-                        <Icon name="pencil" size={14} />
-                      </button>
-                    ) : null}
                   </div>
                   <button
                     className="playlist-meta"

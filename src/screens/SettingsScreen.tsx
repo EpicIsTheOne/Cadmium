@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { MusicProvider } from "../domain/media";
 import { usePlaybackState, playbackStore } from "../playback/playback-store";
 import type { WatchedFolder } from "../providers/local-library-provider";
@@ -43,6 +43,20 @@ export function SettingsScreen({
   const [themeId, setThemeId] = useState(getTheme().id);
   const activeTheme = getTheme(themeId);
   const [tab, setTab] = useState<TabId>("general");
+  const [query, setQuery] = useState("");
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const root = settingsRef.current;
+    if (!root) return;
+    const needle = query.trim().toLowerCase();
+    const cards = Array.from(root.querySelectorAll<HTMLElement>(".settings-card, .settings-hero"));
+    cards.forEach((card) => {
+      const haystack = (card.dataset.search ?? card.textContent ?? "").toLowerCase();
+      const match = needle === "" || haystack.includes(needle);
+      card.style.display = match ? "" : "none";
+    });
+  }, [query, tab]);
 
   const selectTheme = (id: string) => {
     setThemeId(id);
@@ -50,15 +64,18 @@ export function SettingsScreen({
   };
 
   return (
-    <div className="settings-screen">
+    <div className="settings-screen" ref={settingsRef}>
       <header className="settings-header">
         <div className="settings-title">
-          <h1>Settings</h1>
           <p>Control your space. Make it yours.</p>
         </div>
         <div className="settings-search">
           <Icon name="search" size={15} />
-          <input placeholder="Search settings…" readOnly />
+          <input
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search settings…"
+            value={query}
+          />
           <kbd>Ctrl K</kbd>
         </div>
       </header>

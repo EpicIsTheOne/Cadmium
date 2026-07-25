@@ -3297,10 +3297,10 @@ body { background:#02040b; }
 }
 .collection-edit-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .collection-edit-head h2 { margin: 0; font-size: 17px; color: #f3f0fb; }
-.collection-edit-body { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 16px; align-items: start; }
+.collection-edit-body { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 16px; align-items: start; }
 .collection-edit-art {
-  width: 92px;
-  height: 92px;
+  width: 120px;
+  height: 120px;
   border: 1px dashed rgba(54, 224, 168, 0.4);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
@@ -3324,6 +3324,7 @@ body { background:#02040b; }
   color: #d8d3e6;
   background: linear-gradient(transparent, rgba(6, 8, 14, 0.85));
 }
+.collection-edit-desc { grid-column: 1 / -1; }
 .field { display: grid; gap: 6px; }
 .field > span { font-size: 11px; color: #9a96ad; }
 .field input, .field textarea {
