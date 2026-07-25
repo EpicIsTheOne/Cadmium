@@ -107,6 +107,11 @@ export class IconArtVisualizer implements Visualizer {
   }
 
   setArtwork(url: string | null) {
+    // IMPORTANT: do not flip hasTex to 1 until the texture is truly loaded.
+    // Setting it optimistically made the shader sample an empty texture while
+    // uHasTex=1, so base fell back to the art palette (uGlowB) and a red (or
+    // first-token) square flashed over the icon until the cover finished
+    // decoding. Keep hasTex=0 during load so the dim/neutral path applies.
     if (!url) {
       this.hasTex = 0;
       if (this.iconMat) (this.iconMat.uniforms.uHasTex.value as number) = 0;
@@ -126,7 +131,7 @@ export class IconArtVisualizer implements Visualizer {
         }
       },
       undefined,
-      () => { /* keep fallback gradient on error */ },
+      () => { /* keep fallback (hasTex=0) on error */ },
     );
   }
 
