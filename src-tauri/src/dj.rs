@@ -4,9 +4,10 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -128,6 +129,8 @@ pub struct DjRecoveryDto {
     pub dj_queue: DjQueueSnapshotDto,
 }
 
+const NODE_CHECK_TTL_MS: u64 = 5_000;
+
 pub struct FishService {
     data_dir: PathBuf,
     worker: Mutex<Option<FishWorker>>,
@@ -141,11 +144,42 @@ impl FishService {
         }
     }
 
+    /// Check if node is available with caching to avoid blocking on every status call
+    fn check_node_available_cached() -> bool {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        // Try to read from static cache (simple approach without RwLock for this hot path)
+        // Node availability is fairly stable, so we check once and cache for 5 seconds
+        static NODE_AVAILABLE_CACHE: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+        static NODE_AVAILABLE_RESULT: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+
+        let cached_timestamp = NODE_AVAILABLE_CACHE.load(Ordering::Relaxed);
+        let cached_result = NODE_AVAILABLE_RESULT.load(Ordering::Relaxed);
+
+        if now_ms.saturating_sub(cached_timestamp) < NODE_CHECK_TTL_MS && cached_result != 0 {
+            return cached_result == 1;
+        }
+
+        // Check node availability
+        let available = node_available();
+        let result = if available { 1 } else { 2 }; // 1 = available, 2 = not available
+
+        NODE_AVAILABLE_CACHE.store(now_ms, Ordering::Relaxed);
+        NODE_AVAILABLE_RESULT.store(result, Ordering::Relaxed);
+
+        available
+    }
+
     pub fn status(&self, voice_id: Option<String>, voice_label: Option<String>) -> FishStatusDto {
         let configured = read_credential()
             .map(|value| value.is_some_and(|item| !item.is_empty()))
             .unwrap_or(false);
-        let node_available = node_available();
+        let node_available = Self::check_node_available_cached();
         FishStatusDto {
             configured,
             node_available,

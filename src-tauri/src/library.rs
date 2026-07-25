@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 
 const MAX_ARTWORK_BYTES: usize = 4 * 1024 * 1024;
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac"];
+const SPOTIFY_SOURCE_ID: &str = "source_spotify_local_files";
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (
@@ -217,6 +218,47 @@ const MIGRATIONS: &[(i64, &str)] = &[
         INSERT INTO settings (key, value) VALUES ('dj_crossfade_ms', '3000') ON CONFLICT(key) DO NOTHING;
         "#,
     ),
+    (
+        8,
+        r#"
+        ALTER TABLE watched_folders ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'manual';
+        CREATE TABLE spotify_local_files (
+            source_path TEXT PRIMARY KEY NOT NULL,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            last_seen_ms INTEGER NOT NULL
+        );
+        CREATE INDEX idx_spotify_local_files_track ON spotify_local_files(track_id);
+        INSERT INTO watched_folders (id, path, created_at, source_kind)
+        VALUES ('source_spotify_local_files', 'spotify://local-files', 0, 'spotify')
+        ON CONFLICT(id) DO NOTHING;
+        "#,
+    ),
+    (
+        9,
+        r#"
+        ALTER TABLE queue ADD COLUMN collection_id TEXT;
+        ALTER TABLE queue ADD COLUMN collection_title TEXT;
+        "#
+    ),
+    (
+        10,
+        r#"
+        CREATE TABLE playlists (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE playlist_tracks (
+            playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (playlist_id, track_id)
+        );
+        CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
+        "#
+    ),
 ];
 
 #[derive(Debug)]
@@ -368,6 +410,8 @@ pub struct QueueItemDto {
     pub track_id: String,
     pub added_at: i64,
     pub source: String,
+    pub collection_id: Option<String>,
+    pub collection_title: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -378,6 +422,8 @@ pub struct ScanSummaryDto {
     pub tracks_indexed: usize,
     pub unavailable_count: usize,
     pub metadata_errors: usize,
+    pub sfx_skipped: usize,
+    pub sfx_pruned: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -405,6 +451,7 @@ pub struct MoodPointDto {
     pub energy: f32,
     pub valence: f32,
     pub label: String,
+    pub genre: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -466,6 +513,24 @@ pub struct RhythmProfileDto {
     pub basis: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RhythmScanDto {
+    pub track_id: String,
+    pub title: String,
+    pub artist: String,
+    pub bpm: u16,
+    pub beat_interval_ms: u32,
+    pub intensity: f32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RhythmScanResultDto {
+    pub count: usize,
+    pub tracks: Vec<RhythmScanDto>,
+}
+
 pub struct LibraryRepository {
     conn: Connection,
     data_dir: PathBuf,
@@ -479,7 +544,13 @@ impl LibraryRepository {
         fs::create_dir_all(&artwork_dir)?;
         let db_path = data_dir.join("cadmium.sqlite3");
         let conn = Connection::open(db_path)?;
-        Self::configure_and_migrate(conn, data_dir.to_path_buf(), artwork_dir)
+        let repository = Self::configure_and_migrate(conn, data_dir.to_path_buf(), artwork_dir)?;
+        // Self-clean any sound effects imported by an older build before the
+        // title-only guard existed, so they don't linger in the library.
+        if let Err(error) = Self::prune_spotify_sfx(&repository.conn) {
+            eprintln!("Cadmium: startup SFX prune skipped: {error}");
+        }
+        Ok(repository)
     }
 
     #[cfg(test)]
@@ -529,6 +600,7 @@ impl LibraryRepository {
                     COUNT(t.id), COALESCE(SUM(CASE WHEN t.available = 0 THEN 1 ELSE 0 END), 0)
              FROM watched_folders f
              LEFT JOIN tracks t ON t.watched_folder_id = f.id
+             WHERE f.source_kind = 'manual'
              GROUP BY f.id
              ORDER BY f.path COLLATE NOCASE",
         )?;
@@ -559,6 +631,146 @@ impl LibraryRepository {
             params![folder_id, path_string, timestamp],
         )?;
         self.rescan_watched_folder(&folder_id)
+    }
+
+    pub fn reconcile_spotify_local_files(
+        &mut self,
+        raw_paths: &[PathBuf],
+        legacy_roots: &[PathBuf],
+    ) -> LibraryResult<ScanSummaryDto> {
+        let timestamp = now_ms();
+        let mut candidates = Vec::new();
+        let mut metadata_errors = 0;
+        let mut sfx_skipped = 0;
+        for raw_path in raw_paths {
+            let path = fs::canonicalize(raw_path).map_err(|error| {
+                LibraryError::InvalidPath(format!("{}: {error}", raw_path.display()))
+            })?;
+            if !path.is_file() || !is_supported_extension(&path) {
+                continue;
+            }
+            let Ok((candidate, failed)) = self.collect_file_candidate(&path) else {
+                metadata_errors += 1;
+                continue;
+            };
+            if is_likely_sfx(&candidate.metadata.title) {
+                sfx_skipped += 1;
+                continue;
+            }
+            candidates.push(candidate);
+            metadata_errors += usize::from(failed);
+        }
+
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO watched_folders (id, path, created_at, source_kind)
+             VALUES (?1, 'spotify://local-files', ?2, 'spotify')
+             ON CONFLICT(id) DO NOTHING",
+            params![SPOTIFY_SOURCE_ID, timestamp],
+        )?;
+        for candidate in &candidates {
+            Self::reconcile_track(&tx, SPOTIFY_SOURCE_ID, candidate, timestamp)?;
+            let track_id = stable_id("track", &candidate.source_path);
+            tx.execute(
+                "INSERT INTO spotify_local_files (source_path, track_id, last_seen_ms)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(source_path) DO UPDATE SET track_id = excluded.track_id, last_seen_ms = excluded.last_seen_ms",
+                params![candidate.source_path, track_id, timestamp],
+            )?;
+        }
+
+        // The previous importer created broad recursive watched folders. Transfer exact Spotify
+        // members first, then remove those legacy sources and their collateral index records.
+        for root in legacy_roots {
+            let Ok(root) = fs::canonicalize(root) else {
+                continue;
+            };
+            let root_string = root.to_string_lossy().into_owned();
+            let legacy_id: Option<String> = tx
+                .query_row(
+                    "SELECT id FROM watched_folders WHERE path = ?1 AND source_kind = 'manual'",
+                    params![root_string],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(legacy_id) = legacy_id else { continue };
+            tx.execute(
+                "UPDATE tracks SET watched_folder_id = ?1
+                 WHERE watched_folder_id = ?2 AND id IN (SELECT track_id FROM spotify_local_files WHERE last_seen_ms = ?3)",
+                params![SPOTIFY_SOURCE_ID, legacy_id, timestamp],
+            )?;
+            tx.execute(
+                "DELETE FROM watched_folders WHERE id = ?1",
+                params![legacy_id],
+            )?;
+        }
+
+        tx.execute(
+            "DELETE FROM spotify_local_files WHERE last_seen_ms <> ?1",
+            params![timestamp],
+        )?;
+        tx.execute(
+            "DELETE FROM tracks WHERE watched_folder_id = ?1
+             AND id NOT IN (SELECT track_id FROM spotify_local_files)",
+            params![SPOTIFY_SOURCE_ID],
+        )?;
+        tx.execute(
+            "UPDATE watched_folders SET last_scanned_at = ?2 WHERE id = ?1",
+            params![SPOTIFY_SOURCE_ID, timestamp],
+        )?;
+        cleanup_orphans(&tx)?;
+        tx.commit()?;
+        let sfx_pruned = Self::prune_spotify_sfx(&self.conn)?;
+
+        Ok(ScanSummaryDto {
+            folder_id: SPOTIFY_SOURCE_ID.to_owned(),
+            files_seen: raw_paths.len(),
+            tracks_indexed: candidates.len(),
+            unavailable_count: 0,
+            metadata_errors,
+            sfx_skipped,
+            sfx_pruned,
+        })
+    }
+
+    /// Remove any already-imported Spotify-source tracks that are sound
+    /// effects: either short clips (duration 1-30s, which real songs never are)
+    /// or titles that name themselves as effects. Catches effects indexed by an
+    /// older importer before this guard existed. Only the Spotify source is
+    /// touched; manual folders are never affected. Safe to call on every
+    /// startup — it only deletes obvious effect entries from the library index.
+    fn prune_spotify_sfx(conn: &Connection) -> LibraryResult<usize> {
+        let fragment = "(duration_ms > 0 AND duration_ms <= ?2)
+               OR lower(title) LIKE '%sound effect%'
+               OR lower(title) LIKE '%sfx%'
+               OR lower(title) LIKE 'fx %'
+               OR lower(title) LIKE '%notification%'
+               OR lower(title) LIKE '%explosion%'
+               OR lower(title) LIKE '%laser%'
+               OR lower(title) LIKE '%beep%'
+               OR lower(title) LIKE '%sting%'
+               OR lower(title) LIKE '%whoosh%'
+               OR lower(title) LIKE '%click sound%'";
+        let removed = conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM tracks
+                 WHERE watched_folder_id = ?1
+                   AND available = 1
+                   AND ({fragment})"
+            ),
+            params![SPOTIFY_SOURCE_ID, SFX_MAX_DURATION_MS],
+            |row| row.get::<_, i64>(0),
+        )? as usize;
+        conn.execute(
+            &format!(
+                "DELETE FROM tracks
+                 WHERE watched_folder_id = ?1
+                   AND available = 1
+                   AND ({fragment})"
+            ),
+            params![SPOTIFY_SOURCE_ID, SFX_MAX_DURATION_MS],
+        )?;
+        Ok(removed)
     }
 
     pub fn rescan_watched_folder(&mut self, folder_id: &str) -> LibraryResult<ScanSummaryDto> {
@@ -603,6 +815,8 @@ impl LibraryRepository {
             tracks_indexed: candidates.items.len(),
             unavailable_count: unavailable_count as usize,
             metadata_errors: candidates.metadata_errors,
+            sfx_skipped: 0,
+            sfx_pruned: 0,
         })
     }
 
@@ -641,6 +855,7 @@ impl LibraryRepository {
                 description: playlist.rationale,
                 track_ids: playlist.track_ids,
             })
+            .chain(self.get_user_playlists()?.into_iter())
             .collect();
         let recent_track_ids = self.get_recent_track_ids()?;
         Ok(NormalizedLibraryDto {
@@ -650,6 +865,38 @@ impl LibraryRepository {
             playlists,
             recent_track_ids,
         })
+    }
+
+    pub fn ensure_playable_library(&mut self) -> LibraryResult<NormalizedLibraryDto> {
+        let current = self.get_library()?;
+        if current.tracks.iter().any(|track| track.available) {
+            return Ok(current);
+        }
+
+        let folder_ids = self
+            .list_watched_folders()?
+            .into_iter()
+            .map(|folder| folder.id)
+            .collect::<Vec<_>>();
+        for folder_id in folder_ids {
+            let _ = self.rescan_watched_folder(&folder_id);
+        }
+
+        let spotify_paths = {
+            let mut statement = self
+                .conn
+                .prepare("SELECT source_path FROM spotify_local_files ORDER BY source_path")?;
+            let paths = statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(Result::ok)
+                .map(PathBuf::from)
+                .collect::<Vec<_>>();
+            paths
+        };
+        if !spotify_paths.is_empty() {
+            let _ = self.reconcile_spotify_local_files(&spotify_paths, &[]);
+        }
+        self.get_library()
     }
 
     pub fn get_generated_playlists(
@@ -920,13 +1167,17 @@ impl LibraryRepository {
         let feedback = feedback_statement.query_map([], |row| Ok(serde_json::json!({
             "trackId": row.get::<_, String>(0)?, "more": row.get::<_, i64>(1)?, "less": row.get::<_, i64>(2)?
         })))?.collect::<Result<Vec<_>, _>>()?;
-        let recent_set_track_ids = self.conn.prepare("SELECT track_ids_json FROM dj_sets ORDER BY created_at DESC LIMIT 12")?
+        let recent_set_track_ids = self
+            .conn
+            .prepare("SELECT track_ids_json FROM dj_sets ORDER BY created_at DESC LIMIT 12")?
             .query_map([], |row| row.get::<_, String>(0))?
             .filter_map(Result::ok)
             .filter_map(|value| serde_json::from_str::<Vec<String>>(&value).ok())
             .flatten()
             .collect::<Vec<_>>();
-        Ok(serde_json::json!({"tracks":tracks, "favoriteTrackIds":favorites, "feedback":feedback, "recentSetTrackIds":recent_set_track_ids}))
+        Ok(
+            serde_json::json!({"tracks":tracks, "favoriteTrackIds":favorites, "feedback":feedback, "recentSetTrackIds":recent_set_track_ids}),
+        )
     }
 
     pub fn next_dj_sequence(&self, session_id: &str) -> LibraryResult<i64> {
@@ -938,8 +1189,18 @@ impl LibraryRepository {
     }
 
     pub fn get_dj_crossfade_ms(&self) -> LibraryResult<i64> {
-        let value = self.conn.query_row("SELECT value FROM settings WHERE key = 'dj_crossfade_ms'", [], |row| row.get::<_, String>(0)).optional()?;
-        Ok(value.and_then(|item| item.parse::<i64>().ok()).unwrap_or(3000).clamp(0, 8000))
+        let value = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'dj_crossfade_ms'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(value
+            .and_then(|item| item.parse::<i64>().ok())
+            .unwrap_or(3000)
+            .clamp(0, 8000))
     }
 
     pub fn set_dj_crossfade_ms(&mut self, value: i64) -> LibraryResult<i64> {
@@ -959,15 +1220,26 @@ impl LibraryRepository {
         Ok(())
     }
 
-    pub fn record_dj_feedback(&mut self, session_id: &str, track_id: &str, sentiment: &str) -> LibraryResult<()> {
+    pub fn record_dj_feedback(
+        &mut self,
+        session_id: &str,
+        track_id: &str,
+        sentiment: &str,
+    ) -> LibraryResult<()> {
         if !matches!(sentiment.trim(), "more" | "less") {
-            return Err(LibraryError::InvalidInput("DJ feedback must be more or less".to_owned()));
+            return Err(LibraryError::InvalidInput(
+                "DJ feedback must be more or less".to_owned(),
+            ));
         }
         let valid: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM dj_sessions WHERE id = ?1 AND state = 'active') AND EXISTS(SELECT 1 FROM tracks WHERE id = ?2)",
             params![session_id.trim(), track_id.trim()], |row| row.get(0),
         )?;
-        if !valid { return Err(LibraryError::NotFound("active DJ session or track".to_owned())); }
+        if !valid {
+            return Err(LibraryError::NotFound(
+                "active DJ session or track".to_owned(),
+            ));
+        }
         self.conn.execute(
             "INSERT INTO dj_feedback (session_id, track_id, sentiment, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![session_id.trim(), track_id.trim(), sentiment.trim(), now_ms()],
@@ -975,17 +1247,41 @@ impl LibraryRepository {
         Ok(())
     }
 
-    pub fn save_dj_recovery(&mut self, session_id: &str, current_set_id: &str, ordinary: &crate::dj::DjQueueSnapshotDto, dj_queue: &crate::dj::DjQueueSnapshotDto) -> LibraryResult<()> {
-        if ordinary.queue.len() > 500 || dj_queue.queue.len() > 500 || ordinary.current_track_id.as_deref().is_some_and(|value| value.len() > 160) || dj_queue.current_track_id.as_deref().is_some_and(|value| value.len() > 160) {
-            return Err(LibraryError::InvalidInput("DJ recovery queue is too large".to_owned()));
+    pub fn save_dj_recovery(
+        &mut self,
+        session_id: &str,
+        current_set_id: &str,
+        ordinary: &crate::dj::DjQueueSnapshotDto,
+        dj_queue: &crate::dj::DjQueueSnapshotDto,
+    ) -> LibraryResult<()> {
+        if ordinary.queue.len() > 500
+            || dj_queue.queue.len() > 500
+            || ordinary
+                .current_track_id
+                .as_deref()
+                .is_some_and(|value| value.len() > 160)
+            || dj_queue
+                .current_track_id
+                .as_deref()
+                .is_some_and(|value| value.len() > 160)
+        {
+            return Err(LibraryError::InvalidInput(
+                "DJ recovery queue is too large".to_owned(),
+            ));
         }
-        let ordinary_encoded = serde_json::to_string(ordinary).map_err(|error| LibraryError::Metadata(error.to_string()))?;
-        let dj_encoded = serde_json::to_string(dj_queue).map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let ordinary_encoded = serde_json::to_string(ordinary)
+            .map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let dj_encoded = serde_json::to_string(dj_queue)
+            .map_err(|error| LibraryError::Metadata(error.to_string()))?;
         let changed = self.conn.execute(
             "UPDATE dj_sessions SET ordinary_queue_json = ?2, dj_queue_json = ?3, current_set_id = ?4, queue_index = ?5, position_ms = ?6 WHERE id = ?1 AND state = 'active'",
             params![session_id.trim(), ordinary_encoded, dj_encoded, current_set_id.trim(), dj_queue.queue_index as i64, dj_queue.position_ms.max(0)],
         )?;
-        if changed == 0 { return Err(LibraryError::NotFound(format!("active DJ session {session_id}"))); }
+        if changed == 0 {
+            return Err(LibraryError::NotFound(format!(
+                "active DJ session {session_id}"
+            )));
+        }
         Ok(())
     }
 
@@ -994,9 +1290,13 @@ impl LibraryRepository {
             "SELECT id, current_set_id, ordinary_queue_json, dj_queue_json FROM dj_sessions WHERE state = 'active' AND current_set_id IS NOT NULL AND ordinary_queue_json <> '' AND dj_queue_json <> '' ORDER BY created_at DESC LIMIT 1",
             [], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?)),
         ).optional()?;
-        let Some((session_id, set_id, ordinary_json, dj_json)) = session else { return Ok(None); };
-        let ordinary_queue = serde_json::from_str::<crate::dj::DjQueueSnapshotDto>(&ordinary_json).map_err(|error| LibraryError::Metadata(error.to_string()))?;
-        let dj_queue = serde_json::from_str::<crate::dj::DjQueueSnapshotDto>(&dj_json).map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let Some((session_id, set_id, ordinary_json, dj_json)) = session else {
+            return Ok(None);
+        };
+        let ordinary_queue = serde_json::from_str::<crate::dj::DjQueueSnapshotDto>(&ordinary_json)
+            .map_err(|error| LibraryError::Metadata(error.to_string()))?;
+        let dj_queue = serde_json::from_str::<crate::dj::DjQueueSnapshotDto>(&dj_json)
+            .map_err(|error| LibraryError::Metadata(error.to_string()))?;
         let set = self.conn.query_row(
             "SELECT id, session_id, title, rationale, narration, model, generation_mode, track_ids_json, track_reasons_json, created_at, sequence, lifecycle_state FROM dj_sets WHERE id = ?1",
             params![set_id], |row| {
@@ -1009,7 +1309,12 @@ impl LibraryRepository {
                 })
             },
         ).optional()?;
-        Ok(set.map(|current_set| crate::dj::DjRecoveryDto { session_id, current_set, ordinary_queue, dj_queue }))
+        Ok(set.map(|current_set| crate::dj::DjRecoveryDto {
+            session_id,
+            current_set,
+            ordinary_queue,
+            dj_queue,
+        }))
     }
 
     pub fn end_dj_session(&mut self, session_id: &str) -> LibraryResult<()> {
@@ -1088,7 +1393,7 @@ impl LibraryRepository {
     pub fn get_queue(&self) -> LibraryResult<Vec<QueueItemDto>> {
         let mut statement = self
             .conn
-            .prepare("SELECT queue_id, track_id, added_at, source FROM queue ORDER BY position")?;
+            .prepare("SELECT queue_id, track_id, added_at, source, collection_id, collection_title FROM queue ORDER BY position")?;
         let items = statement
             .query_map([], |row| {
                 Ok(QueueItemDto {
@@ -1096,6 +1401,8 @@ impl LibraryRepository {
                     track_id: row.get(1)?,
                     added_at: row.get(2)?,
                     source: row.get(3)?,
+                    collection_id: row.get(4)?,
+                    collection_title: row.get(5)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -1123,8 +1430,8 @@ impl LibraryRepository {
                 )));
             }
             tx.execute(
-                "INSERT INTO queue (position, queue_id, track_id, source, added_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![position as i64, item.id, item.track_id, normalize_queue_source(&item.source), item.added_at.max(0)],
+                "INSERT INTO queue (position, queue_id, track_id, source, added_at, collection_id, collection_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![position as i64, item.id, item.track_id, normalize_queue_source(&item.source), item.added_at.max(0), item.collection_id, item.collection_title],
             )?;
         }
         tx.commit()?;
@@ -1164,6 +1471,199 @@ impl LibraryRepository {
             )?;
         }
         Ok(favorite)
+    }
+
+    /// Hide a track from the library view without touching the user's audio file.
+    /// The row is retained (available = 0) so it reappears on the next scan if the
+    /// file is still present, and can be restored by re-scanning the watched folder.
+    pub fn remove_track(&mut self, track_id: &str) -> LibraryResult<bool> {
+        let track_id = track_id.trim();
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1)",
+            params![track_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LibraryError::NotFound(format!("track {track_id}")));
+        }
+        self.conn.execute(
+            "UPDATE tracks SET available = 0 WHERE id = ?1",
+            params![track_id],
+        )?;
+        Ok(true)
+    }
+
+    /// Assign a track to an album. Persisted on the track row; survives a rescan
+    /// only while the embedded metadata keeps resolving to the same album id.
+    pub fn set_track_album(&mut self, track_id: &str, album_id: &str) -> LibraryResult<bool> {
+        let track_id = track_id.trim();
+        let album_id = album_id.trim();
+        let track_exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1)",
+            params![track_id],
+            |row| row.get(0),
+        )?;
+        if !track_exists {
+            return Err(LibraryError::NotFound(format!("track {track_id}")));
+        }
+        let album_exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM albums WHERE id = ?1)",
+            params![album_id],
+            |row| row.get(0),
+        )?;
+        if !album_exists {
+            return Err(LibraryError::NotFound(format!("album {album_id}")));
+        }
+        self.conn.execute(
+            "UPDATE tracks SET album_id = ?1 WHERE id = ?2",
+            params![album_id, track_id],
+        )?;
+        Ok(true)
+    }
+
+    pub fn create_playlist(&mut self, raw_name: &str) -> LibraryResult<String> {
+        let name = raw_name.trim().to_owned();
+        if name.is_empty() || name.chars().count() > 120 {
+            return Err(LibraryError::InvalidInput("playlist name must be 1 to 120 characters".to_owned()));
+        }
+        let id = stable_id("playlist", &format!("{}-{}", name, now_ms()));
+        let stamp = now_ms();
+        self.conn.execute(
+            "INSERT INTO playlists (id, name, description, created_at, updated_at) VALUES (?1, ?2, '', ?3, ?3)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at",
+            params![id, name, stamp],
+        )?;
+        Ok(id)
+    }
+
+    pub fn rename_playlist(&mut self, playlist_id: &str, raw_name: &str) -> LibraryResult<bool> {
+        let name = raw_name.trim().to_owned();
+        if name.is_empty() || name.chars().count() > 120 {
+            return Err(LibraryError::InvalidInput("playlist name must be 1 to 120 characters".to_owned()));
+        }
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LibraryError::NotFound(format!("playlist {playlist_id}")));
+        }
+        self.conn.execute(
+            "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![name, now_ms(), playlist_id],
+        )?;
+        Ok(true)
+    }
+
+    pub fn delete_playlist(&mut self, playlist_id: &str) -> LibraryResult<bool> {
+        let affected = self.conn.execute("DELETE FROM playlists WHERE id = ?1", params![playlist_id])?;
+        Ok(affected > 0)
+    }
+
+    pub fn add_track_to_playlist(&mut self, playlist_id: &str, track_id: &str) -> LibraryResult<bool> {
+        let playlist_exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        if !playlist_exists {
+            return Err(LibraryError::NotFound(format!("playlist {playlist_id}")));
+        }
+        let track_exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1)",
+            params![track_id],
+            |row| row.get(0),
+        )?;
+        if !track_exists {
+            return Err(LibraryError::NotFound(format!("track {track_id}")));
+        }
+        let next_position: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+            params![playlist_id, track_id, next_position],
+        )?;
+        Ok(true)
+    }
+
+    pub fn remove_track_from_playlist(&mut self, playlist_id: &str, track_id: &str) -> LibraryResult<bool> {
+        let affected = self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+            params![playlist_id, track_id],
+        )?;
+        Ok(affected > 0)
+    }
+
+    pub fn create_album(&mut self, raw_title: &str, artist_id: Option<&str>) -> LibraryResult<String> {
+        let title = raw_title.trim().to_owned();
+        if title.is_empty() || title.chars().count() > 200 {
+            return Err(LibraryError::InvalidInput("album title must be 1 to 200 characters".to_owned()));
+        }
+        let artist = artist_id.and_then(|id| id.trim().is_empty().then_some("")).or(artist_id).filter(|id| !id.trim().is_empty());
+        let album_id = stable_id("album", &format!("{}\\0{}", normalize_text(&title), artist.unwrap_or("")));
+        self.conn.execute(
+            "INSERT INTO albums (id, title, normalized_title, year, artwork_ref) VALUES (?1, ?2, ?3, NULL, NULL)
+             ON CONFLICT(id) DO UPDATE SET title = excluded.title, normalized_title = excluded.normalized_title",
+            params![album_id, title, normalize_text(&title)],
+        )?;
+        if let Some(artist_id) = artist {
+            let artist_exists: bool = self.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM artists WHERE id = ?1)",
+                params![artist_id],
+                |row| row.get(0),
+            )?;
+            if artist_exists {
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO album_artists (album_id, artist_id, position) VALUES (?1, ?2, 0)",
+                    params![album_id, artist_id],
+                )?;
+            }
+        }
+        Ok(album_id)
+    }
+
+    pub fn remove_track_from_album(&mut self, track_id: &str) -> LibraryResult<bool> {
+        self.conn.execute(
+            "UPDATE tracks SET album_id = NULL WHERE id = ?1",
+            params![track_id],
+        )?;
+        Ok(true)
+    }
+
+    pub fn get_user_playlists(&self) -> LibraryResult<Vec<PlaylistDto>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id, name, description, created_at FROM playlists ORDER BY created_at DESC",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut playlists = Vec::new();
+        for (id, name, description, _created_at) in rows {
+            let mut tracks_statement = self.conn.prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )?;
+            let track_ids = tracks_statement
+                .query_map(params![id], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            playlists.push(PlaylistDto {
+                id,
+                name,
+                description,
+                track_ids,
+            });
+        }
+        Ok(playlists)
     }
 
     pub fn record_recent_play(&mut self, track_id: &str, position_ms: i64) -> LibraryResult<()> {
@@ -1571,6 +2071,32 @@ impl LibraryRepository {
         })
     }
 
+    pub fn scan_rhythm(&self) -> LibraryResult<RhythmScanResultDto> {
+        let library = self.get_library()?;
+        let mut tracks: Vec<RhythmScanDto> = Vec::with_capacity(library.tracks.len());
+        for track in library.tracks.iter().filter(|track| track.available) {
+            let mood = mood_point(track);
+            let bpm = (72.0 + mood.energy * 88.0).round() as u16;
+            let artist = track
+                .artist_ids
+                .iter()
+                .filter_map(|id| library.artists.iter().find(|artist| artist.id == *id))
+                .map(|artist| artist.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            tracks.push(RhythmScanDto {
+                track_id: track.id.clone(),
+                title: track.title.clone(),
+                artist,
+                bpm,
+                beat_interval_ms: 60_000 / bpm as u32,
+                intensity: mood.energy,
+            });
+        }
+        tracks.sort_by(|a, b| a.bpm.cmp(&b.bpm));
+        Ok(RhythmScanResultDto { count: tracks.len(), tracks })
+    }
+
     #[cfg(test)]
     pub fn schema_version(&self) -> LibraryResult<i64> {
         Ok(self.conn.query_row(
@@ -1597,39 +2123,43 @@ impl LibraryRepository {
             if !path.starts_with(folder) {
                 continue;
             }
-            let Ok(metadata) = fs::metadata(&path) else {
-                continue;
-            };
-            let (raw_metadata, metadata_failed) =
-                match read_audio_metadata(&path, &self.artwork_dir) {
-                    Ok(metadata) => (metadata, false),
-                    Err(_) => (RawMetadata::from_path(&path), true),
-                };
-            if metadata_failed {
-                metadata_errors += 1;
+            if let Ok((candidate, failed)) = self.collect_file_candidate(&path) {
+                items.push(candidate);
+                metadata_errors += usize::from(failed);
             }
-            let modified_ms = metadata
-                .modified()
-                .ok()
-                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-                .map(|duration| duration.as_millis() as i64)
-                .unwrap_or_default();
-            items.push(IndexedTrack {
-                source_path: path.to_string_lossy().into_owned(),
-                extension: path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .unwrap_or_default()
-                    .to_ascii_lowercase(),
-                byte_length: metadata.len() as i64,
-                modified_ms,
-                metadata: raw_metadata,
-            });
         }
         CandidateCollection {
             items,
             metadata_errors,
         }
+    }
+
+    fn collect_file_candidate(&self, path: &Path) -> LibraryResult<(IndexedTrack, bool)> {
+        let metadata = fs::metadata(path)?;
+        let (raw_metadata, metadata_failed) = match read_audio_metadata(path, &self.artwork_dir) {
+            Ok(metadata) => (metadata, false),
+            Err(_) => (RawMetadata::from_path(path), true),
+        };
+        let modified_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as i64)
+            .unwrap_or_default();
+        Ok((
+            IndexedTrack {
+                source_path: path.to_string_lossy().into_owned(),
+                extension: path
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase(),
+                byte_length: metadata.len() as i64,
+                modified_ms,
+                metadata: raw_metadata,
+            },
+            metadata_failed,
+        ))
     }
 
     fn reconcile_track(
@@ -1699,7 +2229,10 @@ impl LibraryRepository {
                 byte_length, modified_ms, artwork_ref, available, last_seen_ms
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 1, ?17)
              ON CONFLICT(id) DO UPDATE SET
-                watched_folder_id = excluded.watched_folder_id,
+                watched_folder_id = CASE
+                    WHEN excluded.watched_folder_id = 'source_spotify_local_files' THEN tracks.watched_folder_id
+                    ELSE excluded.watched_folder_id
+                END,
                 album_id = excluded.album_id,
                 album_artist_id = excluded.album_artist_id,
                 title = excluded.title,
@@ -1815,7 +2348,8 @@ impl LibraryRepository {
 
         let mut statement = self.conn.prepare(
             "SELECT t.id, t.title, t.album_id, t.duration_ms, t.track_number, t.disc_number, t.year,
-                    t.genre, t.artwork_ref, t.source_path, t.extension, t.byte_length, t.available, f.path
+                    t.genre, t.artwork_ref, t.source_path, t.extension, t.byte_length, t.available,
+                    f.path, f.source_kind
              FROM tracks t
              JOIN watched_folders f ON f.id = t.watched_folder_id
              ORDER BY normalized_title, disc_number, track_number, source_path",
@@ -1827,12 +2361,22 @@ impl LibraryRepository {
                 let artwork_ref: Option<String> = row.get(8)?;
                 let source_path: String = row.get(9)?;
                 let folder_path: String = row.get(13)?;
+                let source_kind: String = row.get(14)?;
+                let canonical_source = fs::canonicalize(&source_path).ok();
                 let available = database_available
-                    && fs::canonicalize(&source_path)
-                        .ok()
-                        .zip(fs::canonicalize(&folder_path).ok())
-                        .map(|(source, folder)| source.is_file() && source.starts_with(folder))
-                        .unwrap_or(false);
+                    && match source_kind.as_str() {
+                        // Spotify membership is an exact-file allowlist. Its watched-folder path is
+                        // intentionally virtual, so only the canonical file itself must exist.
+                        "spotify" => canonical_source
+                            .as_ref()
+                            .map(|source| source.is_file())
+                            .unwrap_or(false),
+                        _ => canonical_source
+                            .as_ref()
+                            .zip(fs::canonicalize(&folder_path).ok().as_ref())
+                            .map(|(source, folder)| source.is_file() && source.starts_with(folder))
+                            .unwrap_or(false),
+                    };
                 Ok(TrackDto {
                     artist_ids: artists_by_track.get(&id).cloned().unwrap_or_default(),
                     id,
@@ -1845,9 +2389,7 @@ impl LibraryRepository {
                     genre: row.get(7)?,
                     artwork_path: artwork_ref.and_then(|value| self.resolve_artwork_ref(&value)),
                     source_path: if available {
-                        fs::canonicalize(&source_path)
-                            .ok()
-                            .map(|path| path.to_string_lossy().into_owned())
+                        canonical_source.map(|path| path.to_string_lossy().into_owned())
                     } else {
                         None
                     },
@@ -2122,6 +2664,17 @@ fn mood_point(track: &TrackDto) -> MoodPointDto {
             valence += valence_delta;
         }
     }
+    // Real corpus signal: track length shapes the energy read when present.
+    // (BPM is itself derived from energy elsewhere, so we don't feed it back here.)
+    if track.duration_ms > 0 {
+        let minutes = track.duration_ms as f32 / 60000.0;
+        // Long tracks read as lower-energy / more ambient; short clips read as punchy.
+        if minutes > 7.5 {
+            energy -= 0.08;
+        } else if minutes < 2.0 {
+            energy += 0.05;
+        }
+    }
     energy = energy.clamp(0.04, 0.96);
     valence = valence.clamp(0.04, 0.96);
     let label = match (energy >= 0.58, valence >= 0.55) {
@@ -2136,6 +2689,7 @@ fn mood_point(track: &TrackDto) -> MoodPointDto {
         energy,
         valence,
         label,
+        genre: track.genre.as_deref().filter(|value| !value.trim().is_empty()).map(|value| value.trim().to_owned()),
     }
 }
 
@@ -2209,6 +2763,7 @@ fn canonicalize_directory(raw_path: &str) -> LibraryResult<PathBuf> {
 }
 
 fn is_supported_extension(path: &Path) -> bool {
+
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| {
@@ -2217,6 +2772,31 @@ fn is_supported_extension(path: &Path) -> bool {
                 .any(|supported| extension.eq_ignore_ascii_case(supported))
         })
         .unwrap_or(false)
+}
+
+// Spotify's Local Files index bundles UI sound effects. The live import guard
+// keys on the title only — a track is excluded when its title names itself an
+// effect. The broader "very short clip" signal lives in prune_spotify_sfx
+// (which only touches the Spotify source), so manual-folder short clips a user
+// intentionally added are never auto-removed, while Spotify's bundled effects
+// are cleaned up automatically after every import and at startup.
+const SFX_MAX_DURATION_MS: i64 = 30_000;
+fn is_likely_sfx(title: &str) -> bool {
+    let normalized = normalize_text(title);
+    let tokens = [
+        "sound effect",
+        "sfx",
+        "fx ",
+        "notification sound",
+        "notification",
+        "explosion",
+        "laser",
+        "beep",
+        "sting",
+        "whoosh",
+        "click sound",
+    ];
+    tokens.iter().any(|token| normalized.contains(token))
 }
 
 fn stable_id(prefix: &str, value: &str) -> String {
@@ -2256,7 +2836,7 @@ mod tests {
     fn migrations_create_the_persistent_schema() {
         let root = temp_root("migrations");
         let repository = LibraryRepository::open_in_memory(&root).unwrap();
-        assert_eq!(repository.schema_version().unwrap(), 7);
+        assert_eq!(repository.schema_version().unwrap(), 10);
         let tables: i64 = repository
             .conn
             .query_row(
@@ -2290,6 +2870,126 @@ mod tests {
             .unwrap();
         assert_eq!(rescanned.unavailable_count, 1);
         assert!(!repository.get_library().unwrap().tracks[0].available);
+    }
+
+    #[test]
+    fn dj_library_repair_rescans_reachable_sources_when_records_are_unavailable() {
+        let root = temp_root("dj-availability-repair");
+        let music = root.join("music");
+        fs::create_dir_all(&music).unwrap();
+        let track = music.join("Signal.wav");
+        copy_fixture_tone(&track);
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+        let summary = repository
+            .add_watched_folder(music.to_str().unwrap())
+            .unwrap();
+
+        fs::remove_file(&track).unwrap();
+        repository
+            .rescan_watched_folder(&summary.folder_id)
+            .unwrap();
+        assert!(!repository.get_library().unwrap().tracks[0].available);
+        copy_fixture_tone(&track);
+
+        let repaired = repository.ensure_playable_library().unwrap();
+        assert!(repaired.tracks[0].available);
+    }
+
+    #[test]
+    fn spotify_exact_import_removes_legacy_collateral_without_touching_files() {
+        let root = temp_root("spotify-exact");
+        let downloads = root.join("Downloads");
+        fs::create_dir_all(&downloads).unwrap();
+        let song = downloads.join("Song.wav");
+        let effect = downloads.join("Unrelated Sound Effect.wav");
+        copy_fixture_tone(&song);
+        copy_fixture_tone(&effect);
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+
+        repository
+            .add_watched_folder(downloads.to_str().unwrap())
+            .unwrap();
+        assert_eq!(repository.get_library().unwrap().tracks.len(), 2);
+        let summary = repository
+            .reconcile_spotify_local_files(&[song.clone()], &[downloads.clone()])
+            .unwrap();
+
+        let library = repository.get_library().unwrap();
+        // The effect-titled file must be excluded from the Spotify source.
+        assert_eq!(summary.sfx_skipped, 1);
+        assert!(library.tracks.iter().all(|t| t.title != "Unrelated Sound Effect"));
+        // Neither file is ever deleted from disk by the import.
+        assert!(song.is_file());
+        assert!(effect.is_file());
+        assert!(repository.list_watched_folders().unwrap().is_empty());
+    }
+
+    #[test]
+    fn prune_spotify_sfx_removes_short_clips_and_effect_titles() {
+        let root = temp_root("spotify-sfx-prune");
+        let repository = LibraryRepository::open_in_memory(&root).unwrap();
+
+        // Seed the Spotify source folder (created by migration) and three
+        // imported tracks covering the two effect cases plus a real song:
+        //  - a real song (180s) that must survive
+        //  - a 0-duration effect whose title names itself (title branch)
+        //  - a 5s untitled clip with no effect keyword (duration branch)
+        repository
+            .conn
+            .execute(
+                "INSERT OR IGNORE INTO watched_folders (id, path, source_kind, created_at, last_scanned_at)
+                 VALUES (?1, ?2, 'spotify', 0, 0)",
+                params![SPOTIFY_SOURCE_ID, "spotify://local"],
+            )
+            .unwrap();
+        repository
+            .conn
+            .execute(
+                "INSERT INTO tracks (id, watched_folder_id, title, normalized_title,
+                                      duration_ms, source_path, extension, byte_length,
+                                      modified_ms, available, last_seen_ms)
+                 VALUES ('t-song', ?1, 'Real Song', 'real song', 180000, 'song.wav', 'wav', 1, 0, 1, 0),
+                        ('t-sfx', ?1, 'Roblox Rocket Explosion Sound Effect',
+                                     'roblox rocket explosion sound effect', 0, 'sfx.wav', 'wav', 1, 0, 1, 0),
+                        ('t-short', ?1, 'Random Clip', 'random clip', 5000, 'clip.wav', 'wav', 1, 0, 1, 0)",
+                params![SPOTIFY_SOURCE_ID],
+            )
+            .unwrap();
+
+        let removed = LibraryRepository::prune_spotify_sfx(&repository.conn).unwrap();
+        assert_eq!(removed, 2);
+
+        let titles: Vec<String> = repository
+            .conn
+            .prepare("SELECT title FROM tracks WHERE watched_folder_id = ?1 ORDER BY title")
+            .unwrap()
+            .query_map(params![SPOTIFY_SOURCE_ID], |row| row.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(titles, vec!["Real Song".to_string()]);
+    }
+
+    #[test]
+    fn manual_folder_membership_survives_spotify_reconciliation() {
+        let root = temp_root("spotify-manual-overlap");
+        let music = root.join("Music");
+        let song = music.join("Song.wav");
+        let other = music.join("Other.wav");
+        copy_fixture_tone(&song);
+        copy_fixture_tone(&other);
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+
+        repository
+            .add_watched_folder(music.to_str().unwrap())
+            .unwrap();
+        repository
+            .reconcile_spotify_local_files(&[song], &[])
+            .unwrap();
+        repository.reconcile_spotify_local_files(&[], &[]).unwrap();
+
+        assert_eq!(repository.get_library().unwrap().tracks.len(), 2);
+        assert_eq!(repository.list_watched_folders().unwrap().len(), 1);
     }
 
     #[test]
@@ -2399,16 +3099,32 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM dj_sets", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
-        repository.record_dj_feedback("session-1", &track_id, "more").unwrap();
+        repository
+            .record_dj_feedback("session-1", &track_id, "more")
+            .unwrap();
         let signals = repository.listening_signals().unwrap();
-        assert_eq!(signals.pointer("/feedback/0/more").and_then(serde_json::Value::as_i64), Some(1));
+        assert_eq!(
+            signals
+                .pointer("/feedback/0/more")
+                .and_then(serde_json::Value::as_i64),
+            Some(1)
+        );
         let snapshot = crate::dj::DjQueueSnapshotDto {
-            queue: vec![QueueItemDto { id: "queue-1".to_owned(), track_id: track_id.clone(), added_at: now_ms(), source: "user".to_owned() }],
+            queue: vec![QueueItemDto {
+                id: "queue-1".to_owned(),
+                track_id: track_id.clone(),
+                added_at: now_ms(),
+                source: "user".to_owned(),
+                collection_id: None,
+                collection_title: None,
+            }],
             queue_index: 0,
             current_track_id: Some(track_id),
             position_ms: 250,
         };
-        repository.save_dj_recovery("session-1", "set-1", &snapshot, &snapshot).unwrap();
+        repository
+            .save_dj_recovery("session-1", "set-1", &snapshot, &snapshot)
+            .unwrap();
         let recovery = repository.get_dj_recovery().unwrap().unwrap();
         assert_eq!(recovery.current_set.sequence, 0);
         assert_eq!(recovery.dj_queue.position_ms, 250);

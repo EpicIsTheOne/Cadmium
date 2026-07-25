@@ -1,54 +1,106 @@
-import type { ProviderDescriptor } from "../domain/media";
+import { useMemo, useState } from "react";
+import orbitArt from "../assets/cadmium-orbit.svg";
+import type { NormalizedLibrary, ProviderDescriptor } from "../domain/media";
 import { Icon, type IconName } from "./Icon";
 
-export type ScreenId = "home" | "search" | "stories" | "lore" | "mood" | "ai" | "mixes" | "radio" | "rhythm" | "library" | "settings";
+export type ScreenId = "home" | "search" | "stories" | "lore" | "mood" | "ai" | "mixes" | "radio" | "rhythm" | "library" | "settings" | "collection";
+export type CollectionKind = "album" | "playlist" | "artist";
+
+type LibraryFilter = "all" | CollectionKind;
 
 interface SidebarProps {
   activeScreen: ScreenId;
+  library?: NormalizedLibrary;
   onNavigate: (screen: ScreenId) => void;
+  onOpenCollection: (kind: CollectionKind, id: string) => void;
   onAddMusic: () => void;
   provider: ProviderDescriptor;
 }
 
-const nav: Array<{ id: ScreenId; label: string; icon: IconName; divider?: boolean }> = [
+const primaryNav: Array<{ id: ScreenId; label: string; icon: IconName }> = [
   { id: "home", label: "Home", icon: "home" },
   { id: "search", label: "Search", icon: "search" },
+  { id: "library", label: "Library", icon: "library" },
+];
+
+const discoveryNav: Array<{ id: ScreenId; label: string; icon: IconName }> = [
   { id: "stories", label: "Stories", icon: "library" },
   { id: "lore", label: "Lore", icon: "mixes" },
-  { id: "mood", label: "Mood Map", icon: "mood" },
+  { id: "mood", label: "Mood", icon: "mood" },
   { id: "ai", label: "AI Playlists", icon: "spark" },
   { id: "mixes", label: "Mixes", icon: "rhythm" },
   { id: "radio", label: "Radio", icon: "rhythm" },
   { id: "rhythm", label: "Rhythm", icon: "mixes" },
-  { id: "library", label: "Library", icon: "library", divider: true },
 ];
 
-export function Sidebar({ activeScreen, onNavigate, onAddMusic, provider }: SidebarProps) {
+export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, onAddMusic, provider }: SidebarProps) {
+  const [filter, setFilter] = useState<LibraryFilter>("all");
+  const [query, setQuery] = useState("");
+
+  const libraryRows = useMemo(() => {
+    if (!library) return [];
+    const rows: Array<{ id: string; kind: CollectionKind; title: string; meta: string; artwork?: string }> = [];
+    if (filter === "all" || filter === "playlist") {
+      library.playlistOrder.forEach((id) => {
+        const playlist = library.playlistsById[id];
+        if (playlist) rows.push({ id, kind: "playlist", title: playlist.name, meta: `${playlist.trackIds.length} tracks · Playlist`, artwork: playlist.artwork?.src });
+      });
+    }
+    if (filter === "all" || filter === "album") {
+      library.albumOrder.forEach((id) => {
+        const album = library.albumsById[id];
+        if (!album) return;
+        const artists = album.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") || "Various artists";
+        rows.push({ id, kind: "album", title: album.title, meta: `Album · ${artists}`, artwork: album.artwork?.src });
+      });
+    }
+    if (filter === "all" || filter === "artist") {
+      library.artistOrder.forEach((id) => {
+        const artist = library.artistsById[id];
+        if (artist) rows.push({ id, kind: "artist", title: artist.name, meta: "Artist", artwork: artist.artwork?.src });
+      });
+    }
+    const normalized = query.trim().toLowerCase();
+    return (normalized ? rows.filter((row) => `${row.title} ${row.meta}`.toLowerCase().includes(normalized)) : rows).slice(0, 80);
+  }, [filter, library, query]);
+
   return (
     <aside className="sidebar">
       <button className="brand-lockup" onClick={() => onNavigate("home")} type="button">
         <span className="brand-mark"><Icon name="logo" size={30} /></span>
         <span className="brand-copy"><strong>Cadmium</strong><small>Hear in Color.</small></span>
       </button>
-      <nav aria-label="Primary navigation" className="sidebar-nav">
-        {nav.map((item, index) => (
-          <button
-            aria-current={activeScreen === item.id ? "page" : undefined}
-            className={`nav-item ${item.divider ? "nav-divider" : ""} ${activeScreen === item.id ? "is-active" : ""}`}
-            key={`${item.label}-${index}`}
-            onClick={() => onNavigate(item.id)}
-            title={item.label}
-            type="button"
-          >
-            <Icon name={item.icon} size={18} />
-            <span>{item.label}</span>
-          </button>
-        ))}
+
+      <nav aria-label="Primary navigation" className="sidebar-nav sidebar-nav-primary">
+        {primaryNav.map((item) => <NavButton activeScreen={activeScreen} item={item} key={item.id} onNavigate={onNavigate} />)}
       </nav>
-      <div className="sidebar-community">
-        <button onClick={() => onNavigate("mixes")} type="button"><Icon name="folder" size={18} /><span>Creator Rooms</span><small>Preview</small></button>
-        <button onClick={() => onNavigate("mood")} type="button"><Icon name="settings" size={18} /><span>Community</span><small>Preview</small></button>
+
+      <div className="sidebar-discovery">
+        <span className="sidebar-label">Explore</span>
+        <nav aria-label="Explore Cadmium" className="sidebar-discovery-grid">
+          {discoveryNav.map((item) => <NavButton activeScreen={activeScreen} compact item={item} key={item.id} onNavigate={onNavigate} />)}
+        </nav>
       </div>
+
+      <section className="sidebar-library">
+        <header>
+          <div><strong>Your Library</strong><small>{library ? `${library.albumOrder.length + library.playlistOrder.length + library.artistOrder.length} collections` : "Local collection"}</small></div>
+          <button aria-label="Add music" onClick={onAddMusic} title="Add music" type="button"><Icon name="plus" size={18} /></button>
+        </header>
+        <div className="sidebar-library-filters">
+          {(["all", "playlist", "album", "artist"] as const).map((value) => <button className={filter === value ? "is-active" : ""} key={value} onClick={() => setFilter(value)} type="button">{value === "all" ? "All" : `${value[0].toUpperCase()}${value.slice(1)}s`}</button>)}
+        </div>
+        <label className="sidebar-library-search"><Icon name="search" size={15} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Search your library" value={query} /></label>
+        <div className="sidebar-library-list">
+          {libraryRows.length ? libraryRows.map((row) => (
+            <button className="sidebar-library-row" key={`${row.kind}-${row.id}`} onClick={() => onOpenCollection(row.kind, row.id)} type="button">
+              <img alt="" src={row.artwork || orbitArt} />
+              <span><strong>{row.title}</strong><small>{row.meta}</small></span>
+            </button>
+          )) : <p className="sidebar-library-empty">{library ? "No matching collections." : "Add music to build your library."}</p>}
+        </div>
+      </section>
+
       <div className="sidebar-profile">
         <button className="profile-avatar" onClick={onAddMusic} title="Add a music folder" type="button"><Icon name="plus" size={18} /></button>
         <div><strong>Local Listener</strong><small>{provider.displayName}</small></div>
@@ -56,4 +108,8 @@ export function Sidebar({ activeScreen, onNavigate, onAddMusic, provider }: Side
       </div>
     </aside>
   );
+}
+
+function NavButton({ activeScreen, compact = false, item, onNavigate }: { activeScreen: ScreenId; compact?: boolean; item: { id: ScreenId; label: string; icon: IconName }; onNavigate: (screen: ScreenId) => void }) {
+  return <button aria-current={activeScreen === item.id ? "page" : undefined} className={`nav-item ${compact ? "is-compact" : ""} ${activeScreen === item.id ? "is-active" : ""}`} onClick={() => onNavigate(item.id)} title={item.label} type="button"><Icon name={item.icon} size={18} /><span>{item.label}</span></button>;
 }

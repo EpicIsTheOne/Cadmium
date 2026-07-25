@@ -19,6 +19,7 @@ import type {
   GeneratedPlaylist,
   RadioSession,
   RhythmProfile,
+  RhythmScanResult,
 } from "../domain/discovery";
 import type {
   PlaybackPersistence,
@@ -94,6 +95,7 @@ interface BackendSettings {
   volume: number;
   muted: boolean;
   theme: string;
+  audio_on_startup: boolean;
 }
 
 interface BackendPlaybackState {
@@ -109,6 +111,8 @@ interface BackendQueueItem {
   trackId: string;
   addedAt: number;
   source: "user" | "recommendation" | "playlist" | string;
+  collectionId?: string;
+  collectionTitle?: string;
 }
 
 interface BackendScanSummary {
@@ -126,6 +130,31 @@ export interface WatchedFolder {
   readonly lastScannedAt: number | null;
   readonly trackCount: number;
   readonly unavailableCount: number;
+}
+
+interface BackendQueueSnapshot {
+  queue: BackendQueueItem[];
+  queueIndex: number;
+  currentTrackId: string | null;
+  positionMs: number;
+}
+
+interface BackendDjRecovery {
+  sessionId: string;
+  currentSet: DjSet;
+  ordinaryQueue: BackendQueueSnapshot;
+  djQueue: BackendQueueSnapshot;
+}
+
+export interface SpotifyImportResult {
+  readonly foldersFound: number;
+  readonly foldersAdded: number;
+  readonly tracksIndexed: number;
+  readonly metadataErrors: number;
+  readonly sfxSkipped: number;
+  readonly sfxPruned: number;
+  readonly paths: readonly string[];
+  readonly message: string;
 }
 
 export interface AiStatus {
@@ -236,6 +265,10 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     return this.call<boolean>("remove_watched_folder", { folderId });
   }
 
+  async importSpotifyLocalFiles(): Promise<SpotifyImportResult> {
+    return this.call<SpotifyImportResult>("import_spotify_local_files");
+  }
+
   async getFavoriteTrackIds(): Promise<readonly TrackId[]> {
     const ids = await this.call<string[]>("get_favorite_track_ids");
     return ids.map(asTrackId);
@@ -245,6 +278,38 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     return this.call<boolean>("set_track_favorite", { trackId, favorite });
   }
 
+  async removeTrack(trackId: TrackId): Promise<boolean> {
+    return this.call<boolean>("remove_track", { trackId });
+  }
+
+  async setTrackAlbum(trackId: TrackId, albumId: AlbumId): Promise<boolean> {
+    return this.call<boolean>("set_track_album", { trackId, albumId });
+  }
+
+  async createPlaylist(name: string): Promise<PlaylistId> {
+    return asPlaylistId(await this.call<string>("create_playlist", { name }));
+  }
+
+  async deletePlaylist(playlistId: PlaylistId): Promise<boolean> {
+    return this.call<boolean>("delete_playlist", { playlistId });
+  }
+
+  async addTrackToPlaylist(trackId: TrackId, playlistId: PlaylistId): Promise<boolean> {
+    return this.call<boolean>("add_track_to_playlist", { playlistId, trackId });
+  }
+
+  async removeTrackFromPlaylist(trackId: TrackId, playlistId: PlaylistId): Promise<boolean> {
+    return this.call<boolean>("remove_track_from_playlist", { playlistId, trackId });
+  }
+
+  async createAlbum(title: string, artistId?: ArtistId | null): Promise<AlbumId> {
+    return asAlbumId(await this.call<string>("create_album", { title, artistId: artistId ?? null }));
+  }
+
+  async removeTrackFromAlbum(trackId: TrackId): Promise<boolean> {
+    return this.call<boolean>("remove_track_from_album", { trackId });
+  }
+
   async loadPlaybackSnapshot(): Promise<PlaybackSnapshot> {
     const [settings, playbackState, queue] = await Promise.all([
       this.call<BackendSettings>("get_settings"),
@@ -252,7 +317,11 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
       this.call<BackendQueueItem[]>("get_queue"),
     ]);
     return {
-      settings,
+      settings: {
+        volume: settings.volume,
+        muted: settings.muted,
+        audioOnStartup: settings.audio_on_startup,
+      },
       playbackState: {
         currentTrackId: playbackState.currentTrackId ?? null,
         positionMs: Math.max(0, playbackState.positionMs),
@@ -271,6 +340,8 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
         trackId: item.trackId,
         addedAt: Date.parse(item.addedAt) || Date.now(),
         source: item.source,
+        ...(item.collectionId ? { collectionId: item.collectionId } : {}),
+        ...(item.collectionTitle ? { collectionTitle: item.collectionTitle } : {}),
       })),
     });
   }
@@ -287,12 +358,13 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     });
   }
 
-  async saveSettings(settings: { volume: number; muted: boolean }): Promise<void> {
+  async saveSettings(settings: { volume: number; muted: boolean; audioOnStartup?: boolean }): Promise<void> {
     await this.call<BackendSettings>("save_settings", {
       settings: {
         volume: Math.min(1, Math.max(0, settings.volume)),
         muted: settings.muted,
         theme: "nocturne",
+        audio_on_startup: settings.audioOnStartup ?? false,
       },
     });
   }
@@ -352,6 +424,14 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
     return { ...result, trackId: asTrackId(result.trackId) };
   }
 
+  async scanRhythm(): Promise<RhythmScanResult> {
+    const result = await this.call<RhythmScanResult>("scan_rhythm");
+    return {
+      count: result.count,
+      tracks: result.tracks.map((entry) => ({ ...entry, trackId: asTrackId(entry.trackId) })),
+    };
+  }
+
   async getDjStatus(): Promise<DjStatus> {
     return this.call<DjStatus>("get_dj_status");
   }
@@ -406,11 +486,22 @@ export class LocalLibraryProvider implements MusicProvider, PlaybackPersistence 
   }
 
   async getDjRecovery(): Promise<DjRecovery | null> {
-    return this.call<DjRecovery | null>("get_dj_recovery");
+    const recovery = await this.call<BackendDjRecovery | null>("get_dj_recovery");
+    if (!recovery) return null;
+    return {
+      ...recovery,
+      ordinaryQueue: mapQueueSnapshot(recovery.ordinaryQueue),
+      djQueue: mapQueueSnapshot(recovery.djQueue),
+    };
   }
 
   async saveDjRecovery(sessionId: string, currentSetId: string, ordinaryQueue: QueueSnapshot, djQueue: QueueSnapshot): Promise<void> {
-    await this.call<void>("save_dj_recovery", { sessionId, currentSetId, ordinaryQueue, djQueue });
+    await this.call<void>("save_dj_recovery", {
+      sessionId,
+      currentSetId,
+      ordinaryQueue: serializeQueueSnapshot(ordinaryQueue),
+      djQueue: serializeQueueSnapshot(djQueue),
+    });
   }
 
   async generateDjSet(sessionId: string | null, prompt: string): Promise<DjSet> {
@@ -436,7 +527,7 @@ function mapTrackIds(data: DiscoveryData): DiscoveryData {
   return {
     stories: data.stories.map((story) => ({ ...story, trackIds: story.trackIds.map(asTrackId) })),
     lore: data.lore,
-    moods: data.moods.map((mood) => ({ ...mood, trackId: asTrackId(mood.trackId) })),
+    moods: data.moods.map((mood) => ({ ...mood, trackId: asTrackId(mood.trackId), genre: mood.genre })),
     mixes: data.mixes.map((mix) => ({ ...mix, trackIds: mix.trackIds.map(asTrackId) })),
     generatedPlaylists: data.generatedPlaylists.map((playlist) => ({
       ...playlist,
@@ -520,6 +611,30 @@ function mapQueueItem(item: BackendQueueItem): QueueItem {
     trackId: asTrackId(item.trackId),
     addedAt: new Date(item.addedAt).toISOString(),
     source: normalizeQueueSource(item.source),
+    ...(item.collectionId ? { collectionId: item.collectionId } : {}),
+    ...(item.collectionTitle ? { collectionTitle: item.collectionTitle } : {}),
+  };
+}
+
+export function mapQueueSnapshot(snapshot: BackendQueueSnapshot): QueueSnapshot {
+  return {
+    ...snapshot,
+    currentTrackId: snapshot.currentTrackId ? asTrackId(snapshot.currentTrackId) : null,
+    queue: snapshot.queue.map(mapQueueItem),
+  };
+}
+
+export function serializeQueueSnapshot(snapshot: QueueSnapshot): BackendQueueSnapshot {
+  return {
+    ...snapshot,
+    queue: snapshot.queue.map((item) => ({
+      id: item.id,
+      trackId: item.trackId,
+      addedAt: Date.parse(item.addedAt) || Date.now(),
+      source: item.source,
+      ...(item.collectionId ? { collectionId: item.collectionId } : {}),
+      ...(item.collectionTitle ? { collectionTitle: item.collectionTitle } : {}),
+    })),
   };
 }
 
@@ -560,6 +675,27 @@ export function createMusicProvider(): MusicProvider {
         status: "unavailable" as const,
         message: "Run Cadmium as the desktop app to scan local music folders.",
       };
+    },
+    async createPlaylist() {
+      throw new Error("Desktop provider unavailable");
+    },
+    async deletePlaylist() {
+      return false;
+    },
+    async addTrackToPlaylist() {
+      return false;
+    },
+    async removeTrackFromPlaylist() {
+      return false;
+    },
+    async createAlbum() {
+      throw new Error("Desktop provider unavailable");
+    },
+    async setTrackAlbum() {
+      return false;
+    },
+    async removeTrackFromAlbum() {
+      return false;
     },
   };
 }

@@ -3,6 +3,7 @@ import gridArt from "../assets/cadmium-grid.svg";
 import orbitArt from "../assets/cadmium-orbit.svg";
 import { Icon } from "../components/Icon";
 import type { ScreenId } from "../components/Sidebar";
+import type { CollectionKind } from "../components/Sidebar";
 import type { NormalizedLibrary, Track } from "../domain/media";
 import { playbackStore } from "../playback/playback-store";
 
@@ -10,15 +11,16 @@ interface Props {
   counts: { tracks: number; albums: number; artists: number; playlists: number };
   onAddMusic: () => void;
   onNavigate: (screen: ScreenId) => void;
+  onOpenCollection: (kind: CollectionKind, id: string) => void;
   library: NormalizedLibrary;
 }
 
-export function HomeScreen({ library, onAddMusic, onNavigate }: Props) {
+export function HomeScreen({ library, onAddMusic, onNavigate, onOpenCollection }: Props) {
   const available = library.trackOrder.map((id) => library.tracksById[id]).filter((track) => track?.available);
-  const recent = library.recentTrackIds.map((id) => library.tracksById[id]).filter((track) => track?.available).slice(0, 6);
+  const recent = library.recentTrackIds.map((id) => library.tracksById[id]).filter((track) => track?.available).slice(0, 10);
   const featured = recent[0] ?? available[0];
-  const visibleTracks = recent.length ? recent : available.slice(0, 6);
-  const albums = library.albumOrder.map((id) => library.albumsById[id]).slice(0, 6);
+  const visibleTracks = recent.length ? recent : available.slice(0, 10);
+  const albums = library.albumOrder.map((id) => library.albumsById[id]).slice(0, 10);
 
   return <div className="home-screen">
     <section className={`feature-hero ${featured ? "" : "feature-hero-empty"}`} style={{ backgroundImage: `url(${featured?.artwork?.src ?? heroArt})` }}>
@@ -38,10 +40,18 @@ export function HomeScreen({ library, onAddMusic, onNavigate }: Props) {
       {visibleTracks.length ? <div className="listen-grid">{visibleTracks.map((track) => <TrackCard key={track.id} library={library} track={track} />)}</div> : <HomeEmpty onAddMusic={onAddMusic} />}
     </HomeRow>
 
-    <HomeRow title="Your Albums" action="See all" onAction={() => onNavigate("library")}>
-      {albums.length ? <div className="mix-grid">{albums.map((album, index) => {
+    <HomeRow title="Your Albums" action="See all" onAction={() => onOpenCollection("album", albums[0]?.id ?? "")}>
+      {albums.length ? <div className="listen-grid">{albums.map((album, index) => {
         const tracks = available.filter((track) => track.albumId === album.id);
-        return <article className={`mix-card mix-${index}`} key={album.id}><img src={album.artwork?.src ?? gridArt} alt="" /><div><strong>{album.title}</strong><small>{tracks.length} track{tracks.length === 1 ? "" : "s"}</small></div><button aria-label={`Play ${album.title}`} disabled={!tracks.length} onClick={() => void playbackStore.playCollection(tracks.map((track) => track.id))} type="button"><Icon name="play" size={14} /></button></article>;
+        const artistName = album.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") || "Various artists";
+        return <article className={`listen-card album-card mix-${index}`} key={album.id} onClick={() => onOpenCollection("album", album.id)}>
+          <div className="album-cover" role="button" tabIndex={0} aria-label={`Open ${album.title}`} onClick={() => onOpenCollection("album", album.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenCollection("album", album.id); } }}>
+            <img src={album.artwork?.src ?? gridArt} alt="" />
+            <button className="album-play" aria-label={`Play ${album.title}`} disabled={!tracks.length} onClick={(event) => { event.stopPropagation(); if (tracks.length) void playbackStore.playCollection(tracks.map((track) => track.id), "playlist", 0, { id: album.id, title: album.title }); }} type="button"><Icon name="play" size={15} /></button>
+          </div>
+          <strong>{album.title}</strong>
+          <div><small>{artistName}</small><em>{tracks.length} track{tracks.length === 1 ? "" : "s"}</em></div>
+        </article>;
       })}</div> : <HomeEmpty onAddMusic={onAddMusic} compact />}
     </HomeRow>
 

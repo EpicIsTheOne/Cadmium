@@ -24,7 +24,18 @@ export type IconName =
   | "filter"
   | "close"
   | "microphone"
-  | "logo";
+  | "heart"
+  | "shuffle"
+  | "list"
+  | "music"
+  | "expand"
+  | "album"
+  | "vinyl"
+  | "user"
+  | "menu"
+  | "logo"
+  | "check"
+  | "trash";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -90,6 +101,28 @@ export function Icon({ name, size = 18, ...props }: IconProps) {
         return <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v4M9 21h6" /></>;
       case "logo":
         return <><path d="M7 4.5h8.7A3.3 3.3 0 0 1 19 7.8v8.4a3.3 3.3 0 0 1-3.3 3.3H7a3.5 3.5 0 0 1 0-7h6.3a2.5 2.5 0 0 0 0-5H7a3.5 3.5 0 0 0 0 7" /><path d="M4.5 9.5h8.8" /></>;
+      case "heart":
+        return <path d="M12 20s-7-4.6-9.3-9C1.2 8.3 2.5 5 5.8 5c2 0 3.3 1.2 4.2 2.6C10.9 6.2 12.2 5 14.2 5c3.3 0 4.6 3.3 3.1 6-2.3 4.4-9.3 9-9.3 9Z" />;
+      case "shuffle":
+        return <><path d="M16 4h4v4" /><path d="M4 20 21 3" /><path d="M21 16v4h-4" /><path d="M15 15l6 6" /><path d="M4 4l5 5" /></>;
+      case "list":
+        return <><path d="M8 6h13M8 12h13M8 18h13" /><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></>;
+      case "music":
+        return <><path d="M9 17.5V6.2l9-1.9v9.4" /><circle cx="6.5" cy="17.5" r="2.5" /><circle cx="15.5" cy="15.5" r="2.5" /></>;
+      case "vinyl":
+        return <><circle cx="12" cy="12" r="8.4" /><circle cx="12" cy="12" r="2.1" /><path d="M12 6.5a5.5 5.5 0 0 0-5.5 5.5" /></>;
+      case "user":
+        return <><circle cx="12" cy="8.4" r="3.7" /><path d="M5.3 19.2a6.7 6.7 0 0 1 13.4 0" /></>;
+      case "menu":
+        return <><circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /></>;
+      case "expand":
+        return <><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></>;
+      case "album":
+        return <><rect x="3.5" y="3.5" width="17" height="17" rx="2.5" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /></>;
+      case "check":
+        return <><path d="m5 12.5 4.5 4.5L19 7" /></>;
+      case "trash":
+        return <><path d="M5 7h14M9.5 7V5h5v2M7 7l1 12h8l1-12" /></>;
     }
   })();
 

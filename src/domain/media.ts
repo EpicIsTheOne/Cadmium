@@ -73,6 +73,8 @@ export interface QueueItem {
   readonly trackId: TrackId;
   readonly addedAt: string;
   readonly source: "user" | "recommendation" | "playlist" | "dj";
+  readonly collectionId?: string;
+  readonly collectionTitle?: string;
 }
 
 export interface NormalizedLibrary {
@@ -119,6 +121,14 @@ export interface MusicProvider {
   getLibrary(): Promise<NormalizedLibrary>;
   search(query: string): Promise<SearchResults>;
   requestAddMusic(): Promise<ProviderActionResult>;
+
+  createPlaylist(name: string): Promise<PlaylistId>;
+  deletePlaylist(playlistId: PlaylistId): Promise<boolean>;
+  addTrackToPlaylist(trackId: TrackId, playlistId: PlaylistId): Promise<boolean>;
+  removeTrackFromPlaylist(trackId: TrackId, playlistId: PlaylistId): Promise<boolean>;
+  createAlbum(title: string, artistId?: ArtistId | null): Promise<AlbumId>;
+  setTrackAlbum(trackId: TrackId, albumId: AlbumId): Promise<boolean>;
+  removeTrackFromAlbum(trackId: TrackId): Promise<boolean>;
 }
 
 export const emptyLibrary = (): NormalizedLibrary => ({

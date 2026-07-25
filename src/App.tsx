@@ -12,13 +12,15 @@ import {
   LocalLibraryProvider,
   type WatchedFolder,
 } from "./providers/local-library-provider";
-import type { NormalizedLibrary, TrackId } from "./domain/media";
+import type { AlbumId, NormalizedLibrary, TrackId } from "./domain/media";
 import { playbackStore } from "./playback/playback-store";
 import { HomeScreen } from "./screens/HomeScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { DiscoveryScreen } from "./screens/DiscoveryScreen";
 import { SearchScreen } from "./screens/SearchScreen";
+import { SearchBox } from "./components/SearchBox";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { CollectionDetailScreen, type CollectionKind } from "./screens/CollectionDetailScreen";
 
 const screenMeta: Record<ScreenId, { eyebrow: string; title: string }> = {
   home: { eyebrow: "Workspace / overview", title: "Home" },
@@ -32,6 +34,7 @@ const screenMeta: Record<ScreenId, { eyebrow: string; title: string }> = {
   rhythm: { eyebrow: "Explore / motion", title: "Rhythm" },
   library: { eyebrow: "Your space / collection", title: "Library" },
   settings: { eyebrow: "Your space / control room", title: "Settings" },
+  collection: { eyebrow: "Collection", title: "Collection" },
 };
 
 const zeroCounts = {
@@ -52,9 +55,11 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [isFolderDragActive, setFolderDragActive] = useState(false);
   const [searchFocusVersion, setSearchFocusVersion] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const [aiFocusVersion, setAiFocusVersion] = useState(0);
   const [djOpen, setDjOpen] = useState(false);
   const [djActivity, setDjActivity] = useState("idle");
+  const [collection, setCollection] = useState<{ kind: CollectionKind; id: string } | null>(null);
   const playbackInitialized = useRef(false);
 
   const loadLibrary = useCallback(async () => {
@@ -178,6 +183,19 @@ export default function App() {
     }
   }, [loadLibrary, provider]);
 
+  const handleImportSpotify = useCallback(async () => {
+    if (!(provider instanceof LocalLibraryProvider)) return;
+    setNotice("Looking for Spotify Local Files sources...");
+    try {
+      const result = await provider.importSpotifyLocalFiles();
+      setNotice(result.message);
+      if (result.foldersAdded > 0) await loadLibrary();
+    } catch {
+      setNotice("Cadmium could not read Spotify's Local Files index.");
+    }
+    window.setTimeout(() => setNotice(null), 6200);
+  }, [loadLibrary, provider]);
+
   const handleToggleFavorite = useCallback(async (trackId: TrackId) => {
     if (!(provider instanceof LocalLibraryProvider)) return;
     const wasFavorite = favoriteTrackIds.includes(trackId);
@@ -198,6 +216,7 @@ export default function App() {
 
   const navigate = (screen: ScreenId) => {
     setActiveScreen(screen);
+    setCollection(null);
     if (screen === "search") {
       setSearchFocusVersion((current) => current + 1);
     }
@@ -206,8 +225,36 @@ export default function App() {
     }
   };
 
+  const openCollection = useCallback((kind: CollectionKind, id: string) => {
+    setCollection({ kind, id });
+  }, []);
+
   const counts = library ? countLibraryEntities(library) : zeroCounts;
   const meta = screenMeta[activeScreen];
+
+  const handleDeleteTrack = useCallback(async (trackId: TrackId) => {
+    if (!(provider instanceof LocalLibraryProvider)) return;
+    try {
+      await provider.removeTrack(trackId);
+      await loadLibrary();
+    } catch {
+      setNotice("Cadmium could not remove that track from your library.");
+      window.setTimeout(() => setNotice(null), 3200);
+    }
+  }, [provider, loadLibrary]);
+
+  const handleAddTrackToAlbum = useCallback(async (trackId: TrackId, albumId: AlbumId) => {
+    if (!(provider instanceof LocalLibraryProvider)) return;
+    try {
+      await provider.setTrackAlbum(trackId, albumId);
+      await loadLibrary();
+      setNotice("Added to album.");
+      window.setTimeout(() => setNotice(null), 2600);
+    } catch {
+      setNotice("Cadmium could not add that track to the album.");
+      window.setTimeout(() => setNotice(null), 3200);
+    }
+  }, [provider, loadLibrary]);
 
   const renderScreen = () => {
     if (library === null && !loadError) {
@@ -222,16 +269,38 @@ export default function App() {
       return <LoadingState />;
     }
 
+    if (collection) {
+      return (
+        <CollectionDetailScreen
+          kind={collection.kind}
+          id={collection.id}
+          library={library}
+          favoriteTrackIds={favoriteTrackIds}
+          onToggleFavorite={handleToggleFavorite}
+          onOpenCollection={openCollection}
+          onNavigate={navigate}
+          provider={provider instanceof LocalLibraryProvider ? provider : null}
+          onLibraryChanged={loadLibrary}
+        />
+      );
+    }
+
     switch (activeScreen) {
       case "home":
-        return <HomeScreen counts={counts} library={library} onAddMusic={handleAddMusic} onNavigate={navigate} />;
+        return <HomeScreen counts={counts} library={library} onAddMusic={handleAddMusic} onNavigate={navigate} onOpenCollection={openCollection} />;
       case "search":
         return (
           <SearchScreen
             key={searchFocusVersion}
             library={library}
             onAddMusic={handleAddMusic}
+            onOpenCollection={openCollection}
             provider={provider}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            favoriteTrackIds={favoriteTrackIds}
+            onToggleFavorite={handleToggleFavorite}
+            onLibraryChanged={loadLibrary}
           />
         );
       case "library":
@@ -240,9 +309,15 @@ export default function App() {
             counts={counts}
             folders={folders}
             library={library}
+            provider={provider instanceof LocalLibraryProvider ? provider : null}
+            favoriteTrackIds={favoriteTrackIds}
             onAddMusic={handleAddMusic}
+            onOpenCollection={openCollection}
             onRemoveFolder={handleRemoveFolder}
             onRescanFolder={handleRescan}
+            onDeleteTrack={handleDeleteTrack}
+            onToggleFavorite={handleToggleFavorite}
+            onLibraryChanged={loadLibrary}
           />
         );
       case "settings":
@@ -250,6 +325,7 @@ export default function App() {
           <SettingsScreen
             folders={folders}
             onAddMusic={handleAddMusic}
+            onImportSpotify={handleImportSpotify}
             onRemoveFolder={handleRemoveFolder}
             onRescanFolder={handleRescan}
             provider={provider}
@@ -269,6 +345,8 @@ export default function App() {
           onAddMusic={handleAddMusic}
           onLibraryChanged={loadLibrary}
           provider={provider instanceof LocalLibraryProvider ? provider : null}
+          favoriteTrackIds={favoriteTrackIds}
+          onToggleFavorite={handleToggleFavorite}
         />;
     }
   };
@@ -277,8 +355,10 @@ export default function App() {
     <div className={"app-shell " + (!contextPanelOpen ? "context-collapsed" : "")}>
       <Sidebar
         activeScreen={activeScreen}
+        library={library ?? undefined}
         onAddMusic={handleAddMusic}
         onNavigate={navigate}
+        onOpenCollection={openCollection}
         provider={provider.descriptor}
       />
 
@@ -289,11 +369,18 @@ export default function App() {
               {activeScreen === "home" ? <><h1>Good evening <Icon name="spark" size={19} /></h1><span>Let’s turn your world into music.</span></> : <><span className="breadcrumb">{meta.eyebrow}</span><h1>{meta.title}</h1></>}
             </div>
             <div className="topbar-actions">
-              <button className="top-search-trigger" onClick={() => navigate("search")} type="button">
-                <Icon name="search" size={16} />
-                <span>Search songs, artists, albums...</span>
-                <kbd>Ctrl K</kbd>
-              </button>
+              <SearchBox
+                focusSignal={searchFocusVersion}
+                library={library ?? undefined}
+                onNavigate={(screen) => navigate(screen)}
+                onOpenCollection={openCollection}
+                provider={provider}
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                favoriteTrackIds={favoriteTrackIds}
+                onToggleFavorite={handleToggleFavorite}
+                onLibraryChanged={loadLibrary}
+              />
               <button
                 aria-expanded={contextPanelOpen}
                 aria-label={contextPanelOpen ? "Hide context panel" : "Show context panel"}
@@ -312,9 +399,18 @@ export default function App() {
       </main>
 
       {contextPanelOpen ? (
-        <ContextPanel library={library ?? undefined} onClose={() => setContextPanelOpen(false)} onNavigate={navigate} />
+        <ContextPanel
+          favoriteTrackIds={favoriteTrackIds}
+          library={library ?? undefined}
+          onClose={() => setContextPanelOpen(false)}
+          onLibraryChanged={loadLibrary}
+          onNavigate={navigate}
+          onOpenCollection={openCollection}
+          onToggleFavorite={handleToggleFavorite}
+          provider={provider instanceof LocalLibraryProvider ? provider : null}
+        />
       ) : null}
-      <BottomPlayer favoriteTrackIds={favoriteTrackIds} library={library ?? undefined} onToggleFavorite={handleToggleFavorite} />
+      <BottomPlayer favoriteTrackIds={favoriteTrackIds} library={library ?? undefined} onToggleFavorite={handleToggleFavorite} provider={provider instanceof LocalLibraryProvider ? provider : null} onLibraryChanged={loadLibrary} />
       {library && provider instanceof LocalLibraryProvider ? <DjPanel library={library} onActivityChange={setDjActivity} onClose={() => setDjOpen(false)} open={djOpen} provider={provider} /> : null}
 
       {isFolderDragActive ? <div className="folder-drop-overlay" role="status"><div><Icon name="folder" size={42} /><strong>Drop music folders to add them</strong><span>Cadmium will scan supported audio files recursively.</span></div></div> : null}

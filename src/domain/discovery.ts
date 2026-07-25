@@ -19,6 +19,7 @@ export interface MoodPoint {
   readonly energy: number;
   readonly valence: number;
   readonly label: string;
+  readonly genre?: string;
 }
 
 export interface Mix {
@@ -61,4 +62,18 @@ export interface RhythmProfile {
   readonly beatIntervalMs: number;
   readonly intensity: number;
   readonly basis: string;
+}
+
+export interface RhythmScanEntry {
+  readonly trackId: TrackId;
+  readonly title: string;
+  readonly artist: string;
+  readonly bpm: number;
+  readonly beatIntervalMs: number;
+  readonly intensity: number;
+}
+
+export interface RhythmScanResult {
+  readonly count: number;
+  readonly tracks: readonly RhythmScanEntry[];
 }

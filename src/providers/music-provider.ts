@@ -1,11 +1,15 @@
 import {
   type Album,
+  type AlbumId,
   type Artist,
+  type ArtistId,
   type MusicProvider,
   type NormalizedLibrary,
   type Playlist,
+  type PlaylistId,
   type SearchResults,
   type Track,
+  type TrackId,
   emptyLibrary,
   emptySearchResults,
 } from "../domain/media";
@@ -42,6 +46,34 @@ export class EmptyMusicProvider implements MusicProvider {
       message:
         "Music import is staged, but not connected yet. The provider boundary is ready for the scanner pass.",
     };
+  }
+
+  async createPlaylist(_name: string): Promise<PlaylistId> {
+    throw new Error("Empty provider has no persistence");
+  }
+
+  async deletePlaylist(_playlistId: PlaylistId): Promise<boolean> {
+    return false;
+  }
+
+  async addTrackToPlaylist(_trackId: TrackId, _playlistId: PlaylistId): Promise<boolean> {
+    return false;
+  }
+
+  async removeTrackFromPlaylist(_trackId: TrackId, _playlistId: PlaylistId): Promise<boolean> {
+    return false;
+  }
+
+  async createAlbum(_title: string, _artistId?: ArtistId | null): Promise<AlbumId> {
+    throw new Error("Empty provider has no persistence");
+  }
+
+  async setTrackAlbum(_trackId: TrackId, _albumId: AlbumId): Promise<boolean> {
+    return false;
+  }
+
+  async removeTrackFromAlbum(_trackId: TrackId): Promise<boolean> {
+    return false;
   }
 }
 

@@ -2,17 +2,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const TURN_TIMEOUT: Duration = Duration::from_secs(90);
+const STATUS_CACHE_TTL_MS: u64 = 5_000;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,11 +105,18 @@ impl std::fmt::Display for AiError {
     }
 }
 
+struct AiStatusCache {
+    status: AiStatusDto,
+    timestamp_ms: u64,
+}
+
 pub struct AiService {
     client: Mutex<Option<CodexClient>>,
     cancel_requested: AtomicBool,
     cloud_enabled: AtomicBool,
-    cwd: String,
+    cwd: PathBuf,
+    status_cache: Mutex<Option<AiStatusCache>>,
+    status_refreshing: AtomicBool,
 }
 
 impl AiService {
@@ -116,7 +125,9 @@ impl AiService {
             client: Mutex::new(None),
             cancel_requested: AtomicBool::new(false),
             cloud_enabled: AtomicBool::new(cloud_enabled),
-            cwd: cwd.to_string_lossy().into_owned(),
+            cwd: cwd.to_path_buf(),
+            status_cache: Mutex::new(None),
+            status_refreshing: AtomicBool::new(false),
         }
     }
 
@@ -130,6 +141,10 @@ impl AiService {
                 }
                 *client = None;
             }
+            // Clear cache when disabled
+            if let Ok(mut cache) = self.status_cache.lock() {
+                *cache = None;
+            }
         }
     }
 
@@ -141,18 +156,71 @@ impl AiService {
         self.cancel_requested.store(true, Ordering::SeqCst);
     }
 
-    pub fn status(&self) -> AiStatusDto {
+    fn now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    pub fn cached_status(&self) -> AiStatusDto {
         if !self.cloud_enabled() {
-            return AiStatusDto {
-                state: "disabled".to_owned(),
+            return disabled_status();
+        }
+        self.status_cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.as_ref().map(|cached| cached.status.clone()))
+            .unwrap_or_else(|| AiStatusDto {
+                state: "checking".to_owned(),
                 connected: false,
-                cloud_enabled: false,
+                cloud_enabled: true,
                 plan_type: None,
                 models: Vec::new(),
-                message:
-                    "Codex curation is disabled for Cadmium. Local generation remains available."
-                        .to_owned(),
-            };
+                message: "Checking the local Codex connection in the background.".to_owned(),
+            })
+    }
+
+    /// Refresh status on a worker thread. Callers on latency-sensitive paths should use
+    /// `cached_status` and schedule this method with `spawn_blocking`.
+    pub fn status(&self) -> AiStatusDto {
+        let now_ms = Self::now_ms();
+
+        // Check cache first - this is the key optimization for UI responsiveness
+        if let Ok(cache) = self.status_cache.lock() {
+            if let Some(cached) = cache.as_ref() {
+                let age_ms = now_ms.saturating_sub(cached.timestamp_ms);
+                if age_ms < STATUS_CACHE_TTL_MS {
+                    return cached.status.clone();
+                }
+            }
+        }
+
+        if self
+            .status_refreshing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return self.cached_status();
+        }
+
+        let fresh_status = self.try_status();
+
+        // Update cache
+        if let Ok(mut cache) = self.status_cache.lock() {
+            *cache = Some(AiStatusCache {
+                status: fresh_status.clone(),
+                timestamp_ms: now_ms,
+            });
+        }
+        self.status_refreshing.store(false, Ordering::SeqCst);
+
+        fresh_status
+    }
+
+    fn try_status(&self) -> AiStatusDto {
+        if !self.cloud_enabled() {
+            return disabled_status();
         }
         match self.with_client(|client| client.status()) {
             Ok(status) => status,
@@ -193,9 +261,10 @@ impl AiService {
             return Err(AiError::SignedOut("Codex curation is disabled".to_owned()));
         }
         self.cancel_requested.store(false, Ordering::SeqCst);
-        let cwd = self.cwd.clone();
-        let result = self
-            .with_client(|client| client.generate(prompt, catalog, &cwd, &self.cancel_requested));
+        let cwd_str = self.cwd.to_string_lossy().into_owned();
+        let result = self.with_client(|client| {
+            client.generate(prompt, catalog, &cwd_str, &self.cancel_requested)
+        });
         if matches!(result, Err(AiError::Cancelled)) {
             if let Ok(mut client) = self.client.lock() {
                 if let Some(client) = client.as_mut() {
@@ -217,13 +286,13 @@ impl AiService {
             return Err(AiError::SignedOut("Codex curation is disabled".to_owned()));
         }
         self.cancel_requested.store(false, Ordering::SeqCst);
-        let cwd = self.cwd.clone();
+        let cwd_str = self.cwd.to_string_lossy().into_owned();
         self.with_client(|client| {
             client.generate_dj(
                 prompt,
                 catalog,
                 listening_signals,
-                &cwd,
+                &cwd_str,
                 &self.cancel_requested,
             )
         })
@@ -249,6 +318,18 @@ impl AiService {
             }
         }
         result
+    }
+}
+
+fn disabled_status() -> AiStatusDto {
+    AiStatusDto {
+        state: "disabled".to_owned(),
+        connected: false,
+        cloud_enabled: false,
+        plan_type: None,
+        models: Vec::new(),
+        message: "Codex curation is disabled for Cadmium. Local generation remains available."
+            .to_owned(),
     }
 }
 
@@ -587,7 +668,7 @@ impl CodexClient {
                 let completed_id = completed_turn
                     .get("id")
                     .and_then(Value::as_str)
-                    .unwrap_or(turn_id);
+                    .unwrap_or(thread_id);
                 if completed_id != turn_id {
                     continue;
                 }
@@ -688,15 +769,15 @@ impl CodexClient {
     }
 }
 
-fn resolve_codex_executable() -> std::path::PathBuf {
+fn resolve_codex_executable() -> PathBuf {
     if let Some(path) = std::env::var_os("CADMIUM_CODEX_PATH")
-        .map(std::path::PathBuf::from)
+        .map(PathBuf::from)
         .filter(|path| path.is_file())
     {
         return path;
     }
     if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        let winget = std::path::PathBuf::from(local)
+        let winget = PathBuf::from(local)
             .join("Microsoft")
             .join("WinGet")
             .join("Packages")
@@ -706,7 +787,7 @@ fn resolve_codex_executable() -> std::path::PathBuf {
             return winget;
         }
     }
-    std::path::PathBuf::from("codex")
+    PathBuf::from("codex")
 }
 
 impl Drop for CodexClient {

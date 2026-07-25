@@ -1,17 +1,25 @@
 import { useEffect, useState } from "react";
-import type { MusicProvider, NormalizedLibrary, SearchResults } from "../domain/media";
-import { EmptyState } from "../components/EmptyState";
+import type { MusicProvider, NormalizedLibrary, SearchResults, TrackId } from "../domain/media";
+import type { CollectionKind } from "../components/Sidebar";
 import { Icon } from "../components/Icon";
+import { TrackMenu } from "../components/TrackMenu";
 import { playbackStore } from "../playback/playback-store";
+import orbitArt from "../assets/cadmium-orbit.svg";
 
 interface SearchScreenProps {
   library: NormalizedLibrary;
   provider: MusicProvider;
   onAddMusic: () => void;
+  onOpenCollection: (kind: CollectionKind, id: string) => void;
+  query: string;
+  onQueryChange: (query: string) => void;
+  favoriteTrackIds: readonly TrackId[];
+  onToggleFavorite: (trackId: TrackId) => void;
+  onLibraryChanged: () => void;
 }
 
-export function SearchScreen({ library, provider, onAddMusic }: SearchScreenProps) {
-  const [query, setQuery] = useState("");
+export function SearchScreen({ library, provider, onAddMusic, onOpenCollection, query, onQueryChange, favoriteTrackIds, onToggleFavorite, onLibraryChanged }: SearchScreenProps) {
+  const favoriteSet = new Set(favoriteTrackIds);
   const [results, setResults] = useState<SearchResults | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -44,121 +52,157 @@ export function SearchScreen({ library, provider, onAddMusic }: SearchScreenProp
     };
   }, [provider, query]);
 
-  const resultCount =
-    (results?.trackIds.length ?? 0) +
-    (results?.albumIds.length ?? 0) +
-    (results?.artistIds.length ?? 0) +
-    (results?.playlistIds.length ?? 0);
+  const trackResults = results?.trackIds ?? [];
+  const albumResults = results?.albumIds ?? [];
+  const artistResults = results?.artistIds ?? [];
+  const playlistResults = results?.playlistIds ?? [];
+  const totalResults = trackResults.length + albumResults.length + artistResults.length + playlistResults.length;
 
   return (
-    <div className="screen-stack">
-      <section className="search-stage panel-surface">
-        <div className="search-stage-heading">
-          <div>
-            <span className="eyebrow">Search the graph</span>
-            <h2>Find the thread.</h2>
-          </div>
-          <span className="keyboard-hint"><kbd>Ctrl</kbd><kbd>K</kbd></span>
-        </div>
-        <label className="search-field">
-          <Icon name="search" size={21} />
-          <span className="sr-only">Search music</span>
-          <input
-            autoFocus
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tracks, albums, artists, playlists..."
-            type="search"
-            value={query}
-          />
-          {query ? (
-            <button aria-label="Clear search" className="search-clear" onClick={() => setQuery("")} type="button">
-              <Icon name="close" size={17} />
-            </button>
-          ) : null}
-        </label>
-        <div className="search-scope-row">
-          <span><span className="scope-dot scope-dot-active" />All media</span>
-          <span><span className="scope-dot" />Provider: {provider.descriptor.displayName}</span>
-          <span className="search-result-copy" aria-live="polite">
-            {isSearching ? "Searching..." : query ? `${resultCount} matches` : "Waiting for a query"}
-          </span>
-        </div>
-      </section>
-
-      {query && !isSearching && resultCount === 0 ? (
-        <EmptyState
-          actionLabel="Add music"
-          body={`There are no matches for “${query}” in the normalized local library.`}
-          icon="search"
-          onAction={onAddMusic}
-          title="Nothing answered back."
-        />
-      ) : null}
-
+    <div className="search search-page">
       {!query ? (
-        <section className="search-guidance panel-surface">
-          <div className="search-guidance-art" aria-hidden="true">
-            <div className="search-orbit search-orbit-one" />
-            <div className="search-orbit search-orbit-two" />
-            <div className="search-orbit search-orbit-three" />
-            <Icon name="search" size={26} />
-          </div>
-          <div>
-            <span className="eyebrow">Start with a real source</span>
-            <h2>Search becomes useful after import.</h2>
-            <p>Cadmium searches normalized records, not raw filesystem responses. Until then, this is intentionally a quiet room.</p>
-          </div>
+        <div className="search-empty">
+          <span className="empty-art"><Icon name="search" size={28} /></span>
+          <h2>Search becomes useful after import.</h2>
+          <p>Cadmium searches normalized records, not raw filesystem responses. Use the search bar above to find tracks, albums, artists, and playlists.</p>
           <button className="button button-secondary" onClick={onAddMusic} type="button">
             <Icon name="folder" size={16} />
             Add a source
           </button>
-        </section>
+        </div>
       ) : null}
 
-      {query && !isSearching && resultCount > 0 ? (
+      {query && !isSearching && totalResults === 0 ? (
+        <div className="search-empty">
+          <span className="empty-art"><Icon name="search" size={28} /></span>
+          <h2>Nothing answered back.</h2>
+          <p>There are no matches for "{query}" in the normalized local library.</p>
+          <button className="button button-secondary" onClick={onAddMusic} type="button">
+            <Icon name="folder" size={16} />
+            Add music
+          </button>
+        </div>
+      ) : null}
+
+      {query && !isSearching && totalResults > 0 ? (
         <>
-          <section className="results-summary panel-surface">
-            <span className="eyebrow">Results</span>
-            <h2>{resultCount} records found</h2>
-            <p>
-              {results?.trackIds.length ?? 0} tracks · {results?.albumIds.length ?? 0} albums ·{" "}
-              {results?.artistIds.length ?? 0} artists · {results?.playlistIds.length ?? 0} playlists
-            </p>
-            <span className="results-note">Results are sourced from the normalized provider graph.</span>
-          </section>
-          <section className="results-list panel-surface">
-            <span className="eyebrow">Matches</span>
-            {(results?.trackIds ?? []).map((trackId) => {
-              const track = library.tracksById[trackId];
-              if (!track) return null;
-              return (
-                <div className="result-row" key={track.id}>
-                  <div className="result-row-copy">
-                    <strong>{track.title}</strong>
-                    <small>{track.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") || "Unknown artist"}</small>
-                  </div>
-                  <button className="button button-ghost" disabled={!track.available} onClick={() => void playbackStore.playTrack(track.id)} type="button">
-                    <Icon name="play" size={14} />
-                    {track.available ? "Play" : "Unavailable"}
-                  </button>
-                  <button className="button button-secondary" disabled={!track.available} onClick={() => playbackStore.enqueue(track.id)} type="button">
-                    <Icon name="plus" size={14} />
-                    Queue
-                  </button>
+          <div className="search-results-head">
+            <h2>Results</h2>
+            <span className="count">{totalResults} records found</span>
+          </div>
+
+          {trackResults.length > 0 ? (
+            <section className="search-result-group">
+              <h3>Tracks · {trackResults.length}</h3>
+              <div className="collection-tracklist search-tracklist">
+                <div className="collection-track-head" aria-hidden="true">
+                  <span className="ct-number">#</span>
+                  <span className="ct-title">Title</span>
+                  <span className="ct-album">Album</span>
+                  <span className="ct-duration"><Icon name="filter" size={13} /></span>
+                  <span className="ct-menu-spacer" />
                 </div>
-              );
-            })}
-            {(results?.albumIds ?? []).map((albumId) => {
-              const album = library.albumsById[albumId];
-              return album ? <div className="result-row result-row-muted" key={album.id}><div className="result-row-copy"><strong>{album.title}</strong><small>Album</small></div></div> : null;
-            })}
-            {(results?.artistIds ?? []).map((artistId) => {
-              const artist = library.artistsById[artistId];
-              return artist ? <div className="result-row result-row-muted" key={artist.id}><div className="result-row-copy"><strong>{artist.name}</strong><small>Artist</small></div></div> : null;
-            })}
-          </section>
+                {trackResults.map((trackId) => {
+                  const track = library.tracksById[trackId];
+                  if (!track) return null;
+                  const album = track.albumId ? library.albumsById[track.albumId] : undefined;
+                  return (
+                    <div className={`collection-track ${track.available ? "" : "is-unavailable"}`} key={track.id}>
+                      <span className="ct-index">
+                        <span className="ct-number">{track.trackNumber ?? "·"}</span>
+                        <button className="ct-play" aria-label={`Play ${track.title}`} disabled={!track.available} onClick={() => void playbackStore.playTrack(track.id)} type="button"><Icon name="play" size={13} /></button>
+                      </span>
+                      <button className="ct-title" disabled={!track.available} onClick={() => void playbackStore.playTrack(track.id)} type="button">
+                        <img className="ct-art" alt="" aria-hidden="true" src={track.artwork?.src ?? orbitArt} />
+                        <span className="ct-title-copy">
+                          <strong>{track.title}</strong>
+                          <small>{track.artistIds.map((artistId) => library.artistsById[artistId]?.name).filter(Boolean).join(", ") || "Unknown artist"}</small>
+                        </span>
+                      </button>
+                      <span className="ct-album">
+                        {album ? <button className="ct-album-link" onClick={(event) => { event.stopPropagation(); onOpenCollection("album", album.id); }} type="button">{album.title}</button> : <span>—</span>}
+                      </span>
+                      <span className="ct-duration">{track.available ? formatDuration(track.durationMs) : "Unavailable"}</span>
+                      <span className="ct-actions">
+                        <TrackMenu
+                          align="right"
+                          disabled={!track.available}
+                          isFavorite={favoriteSet.has(track.id)}
+                          library={library}
+                          onAddToQueue={(id) => playbackStore.enqueue(id, "user")}
+                          onChanged={onLibraryChanged}
+                          onToggleFavorite={onToggleFavorite}
+                          provider={provider}
+                          trackId={track.id}
+                        />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {albumResults.length > 0 ? (
+            <section className="search-result-group">
+              <h3>Albums · {albumResults.length}</h3>
+              <div className="library-playlists-grid">
+                {albumResults.map((albumId) => {
+                  const album = library.albumsById[albumId];
+                  if (!album) return null;
+                  return (
+                    <button className="search-result-pill" key={album.id} onClick={() => onOpenCollection("album", album.id)} type="button">
+                      <img alt="" aria-hidden="true" src={album.artwork?.src ?? orbitArt} style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover" }} />
+                      <span className="pill-copy"><strong>{album.title}</strong><small>Album · {album.artistIds.map((id) => library.artistsById[id]?.name).filter(Boolean).join(", ") || "Unknown artist"}</small></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {artistResults.length > 0 ? (
+            <section className="search-result-group">
+              <h3>Artists · {artistResults.length}</h3>
+              <div className="library-playlists-grid">
+                {artistResults.map((artistId) => {
+                  const artist = library.artistsById[artistId];
+                  if (!artist) return null;
+                  return (
+                    <button className="search-result-pill" key={artist.id} onClick={() => onOpenCollection("artist", artist.id)} type="button">
+                      <span className="empty-art" style={{ width: 36, height: 36, borderRadius: "50%", boxShadow: "none" }}><Icon name="user" size={18} /></span>
+                      <span className="pill-copy"><strong>{artist.name}</strong><small>Artist</small></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {playlistResults.length > 0 ? (
+            <section className="search-result-group">
+              <h3>Playlists · {playlistResults.length}</h3>
+              <div className="library-playlists-grid">
+                {playlistResults.map((playlistId) => {
+                  const playlist = library.playlistsById[playlistId];
+                  if (!playlist) return null;
+                  return (
+                    <button className="search-result-pill" key={playlist.id} onClick={() => onOpenCollection("playlist", playlist.id)} type="button">
+                      <span className="empty-art" style={{ width: 36, height: 36, borderRadius: 8, boxShadow: "none", color: "#dc66ef" }}><Icon name="spark" size={18} /></span>
+                      <span className="pill-copy"><strong>{playlist.name}</strong><small>Playlist · {playlist.trackIds.length} tracks</small></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
         </>
       ) : null}
     </div>
   );
+}
+
+function formatDuration(durationMs: number) {
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }

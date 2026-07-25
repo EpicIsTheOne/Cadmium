@@ -15,6 +15,7 @@ export interface PlaybackStoreState {
   readonly isPlaying: boolean;
   readonly volume: number;
   readonly muted: boolean;
+  readonly audioOnStartup: boolean;
   readonly queue: readonly QueueItem[];
   readonly queueIndex: number;
   readonly shuffle: boolean;
@@ -23,9 +24,10 @@ export interface PlaybackStoreState {
 }
 
 export interface PlaybackSnapshot {
-  readonly settings: {
+  settings: {
     readonly volume: number;
     readonly muted: boolean;
+    readonly audioOnStartup?: boolean;
   };
   readonly playbackState: {
     readonly currentTrackId: string | null;
@@ -41,7 +43,7 @@ export interface PlaybackPersistence {
   loadPlaybackSnapshot(): Promise<PlaybackSnapshot>;
   saveQueue(queue: readonly QueueItem[]): Promise<void>;
   savePlaybackState(state: PlaybackStoreState): Promise<void>;
-  saveSettings(settings: { volume: number; muted: boolean }): Promise<void>;
+  saveSettings(settings: { volume: number; muted: boolean; audioOnStartup?: boolean }): Promise<void>;
   recordRecentPlay(trackId: TrackId, positionMs: number): Promise<void>;
   recordListeningEvent?(trackId: TrackId, eventType: "play" | "complete" | "skip" | "seek_away" | "favorite", source: string, positionMs: number, durationMs: number, sessionId: string | null): Promise<void>;
 }
@@ -53,6 +55,7 @@ const defaultState = (): PlaybackStoreState => ({
   isPlaying: false,
   volume: 0.8,
   muted: false,
+  audioOnStartup: false,
   queue: [],
   queueIndex: 0,
   shuffle: false,
@@ -127,6 +130,10 @@ export class PlaybackStore {
 
   getSnapshot = (): PlaybackStoreState => this.state;
 
+  getAudioElement(): HTMLAudioElement | null {
+    return this.audio;
+  }
+
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -151,6 +158,7 @@ export class PlaybackStore {
         repeatMode: snapshot.playbackState.repeatMode,
         volume: clampVolume(snapshot.settings.volume),
         muted: snapshot.settings.muted,
+        audioOnStartup: snapshot.settings.audioOnStartup ?? false,
       };
       this.pendingResumeTrackId = currentTrackId;
       this.pendingResumePositionMs = currentTrackId ? Math.max(0, snapshot.playbackState.positionMs) : null;
@@ -260,13 +268,20 @@ export class PlaybackStore {
     this.persistPlayback(true);
   }
 
+  setAudioOnStartup(audioOnStartup: boolean) {
+    this.setState({ audioOnStartup });
+    this.persistence
+      ?.saveSettings({ volume: this.state.volume, muted: this.state.muted, audioOnStartup })
+      .catch(() => undefined);
+  }
+
   setVolume(volume: number) {
     const nextVolume = clampVolume(volume);
     if (this.audio) {
       this.audio.volume = this.narrationDucked ? nextVolume * 0.18 : nextVolume;
     }
     this.setState({ volume: nextVolume });
-    this.persistence?.saveSettings({ volume: nextVolume, muted: this.state.muted }).catch(() => undefined);
+    this.persistence?.saveSettings({ volume: nextVolume, muted: this.state.muted, audioOnStartup: this.state.audioOnStartup }).catch(() => undefined);
   }
 
   toggleMute() {
@@ -276,7 +291,7 @@ export class PlaybackStore {
     }
     if (this.fadingAudio) this.fadingAudio.muted = muted;
     this.setState({ muted });
-    this.persistence?.saveSettings({ volume: this.state.volume, muted }).catch(() => undefined);
+    this.persistence?.saveSettings({ volume: this.state.volume, muted, audioOnStartup: this.state.audioOnStartup }).catch(() => undefined);
   }
 
   async next(recordSkip = true) {
@@ -308,35 +323,36 @@ export class PlaybackStore {
     }
   }
 
-  enqueue(trackId: TrackId, source: QueueItem["source"] = "user") {
+  enqueue(trackId: TrackId, source: QueueItem["source"] = "user", collection?: { id: string; title: string }) {
     const track = this.library.tracksById[trackId];
     if (!track || !track.available) {
       return;
     }
-    const item = this.createQueueItem(trackId, source);
+    const item = this.createQueueItem(trackId, source, collection);
     this.setState({ queue: [...this.state.queue, item] });
     this.persistQueue();
   }
 
-  async playCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "playlist") {
+  async playCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "playlist", startIndex = 0, collection?: { id: string; title: string }) {
     const playable = trackIds.filter((trackId) => this.library.tracksById[trackId]?.available);
     if (playable.length === 0) {
       this.setState({ error: "This collection has no playable local tracks." });
       return;
     }
-    const queue = playable.map((trackId) => this.createQueueItem(trackId, source));
+    const queue = playable.map((trackId) => this.createQueueItem(trackId, source, collection));
+    const clampedStart = Math.min(Math.max(0, startIndex), playable.length - 1);
     const shouldCrossfade = source === "dj" && this.djCrossfadeMs > 0 && this.state.isPlaying && Boolean(this.audio);
-    this.setState({ queue, queueIndex: 0 });
+    this.setState({ queue, queueIndex: clampedStart });
     this.persistQueue();
     if (shouldCrossfade) {
       this.crossfadeInProgress = true;
-      try { await this.crossfadeToQueueIndex(0); }
+      try { await this.crossfadeToQueueIndex(clampedStart); }
       finally { this.crossfadeInProgress = false; }
-    } else await this.playTrack(playable[0]);
+    } else await this.playTrack(playable[clampedStart]);
   }
 
-  enqueueCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "dj") {
-    const items = trackIds.filter((trackId) => this.library.tracksById[trackId]?.available).map((trackId) => this.createQueueItem(trackId, source));
+  enqueueCollection(trackIds: readonly TrackId[], source: QueueItem["source"] = "dj", collection?: { id: string; title: string }) {
+    const items = trackIds.filter((trackId) => this.library.tracksById[trackId]?.available).map((trackId) => this.createQueueItem(trackId, source, collection));
     if (!items.length) return;
     this.setState({ queue: [...this.state.queue, ...items] });
     this.persistQueue();
@@ -368,10 +384,11 @@ export class PlaybackStore {
     return { queue: [...this.state.queue], queueIndex: this.state.queueIndex, currentTrackId: this.state.currentTrackId, positionMs: this.state.positionMs };
   }
 
-  async restoreQueueSnapshot(snapshot: QueueSnapshot, autoplay = true) {
+  async restoreQueueSnapshot(snapshot: QueueSnapshot, autoplay?: boolean) {
+    const shouldAutoplay = autoplay ?? this.state.audioOnStartup;
     this.setState({ queue: snapshot.queue, queueIndex: Math.min(snapshot.queueIndex, Math.max(0, snapshot.queue.length - 1)) });
     this.persistQueue();
-    if (autoplay && snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
+    if (shouldAutoplay && snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
       await this.playTrack(snapshot.currentTrackId);
       this.seek(snapshot.positionMs);
     } else if (snapshot.currentTrackId && this.library.tracksById[snapshot.currentTrackId]?.available) {
@@ -526,13 +543,14 @@ export class PlaybackStore {
     };
   }
 
-  private createQueueItem(trackId: TrackId, source: QueueItem["source"] = "user"): QueueItem {
+  private createQueueItem(trackId: TrackId, source: QueueItem["source"] = "user", collection?: { id: string; title: string }): QueueItem {
     this.idCounter += 1;
     return {
       id: `queue-${Date.now()}-${this.idCounter}`,
       trackId,
       addedAt: new Date().toISOString(),
       source,
+      ...(collection ? { collectionId: collection.id, collectionTitle: collection.title } : {}),
     };
   }
 
