@@ -22,7 +22,7 @@ void main(){
 }`;
 
 const ICON_FRAG = `
-uniform sampler2D uTex; uniform float uHasTex; uniform vec3 uGlowA; uniform vec3 uGlowB;
+uniform sampler2D uTex; uniform float uHasTex; uniform vec3 uGlowB;
 uniform float uPulse; uniform float uEdge;
 varying vec2 vUv;
 void main(){
@@ -31,20 +31,28 @@ void main(){
   float dist = max(d.x, d.y);
   float radius = 0.86;
   float mask = 1.0 - smoothstep(radius - 0.04, radius, dist);
-  // While the album art is still loading (or absent), keep the plane dim and
-  // neutral so the art-derived palette color (often red first) does NOT flash
-  // as a bright square over the icon. Once the texture is present, the art and
-  // its beat-glow halo/rim show as intended.
-  vec3 base = mix(uGlowB * 0.3, uGlowB, uHasTex);
+
+  // Base: the album cover. When art is still loading/absent, show a dim,
+  // neutral wash (NOT the art palette) so no colored square can flash.
+  vec3 cover = vec3(0.06);
   if (uHasTex > 0.5) {
-    vec3 tex = texture2D(uTex, vUv).rgb;
-    base = mix(uGlowB, tex, 0.92);
+    cover = texture2D(uTex, vUv).rgb;
   }
-  // Beat glow halo + rim light only appear with the real artwork, so the
-  // art-color never flashes over a bare/loading icon.
-  float halo = smoothstep(radius - 0.16, radius, dist) * (0.4 + uPulse) * uHasTex;
-  vec3 col = base + (uGlowA * halo) * (0.6 + uPulse);
-  col += uGlowA * uEdge * smoothstep(radius - 0.02, radius, dist) * 0.5 * uHasTex;
+  // A gentle, dim ambient tint toward the palette (scaled down hard) — never
+  // a saturated color, never on the edges.
+  vec3 base = mix(cover, cover * 0.8 + uGlowB * 0.12, 0.35);
+
+  // Beat reaction: brighten the COVER'S OWN pixels near the edge (a white lift),
+  // not a foreign colored halo. This pulses with the music without ever
+  // painting the palette color (e.g. red) over the icon.
+  float edgeBand = smoothstep(radius - 0.18, radius, dist);
+  float beatLift = (0.25 + uPulse * 0.9) * uHasTex;
+  vec3 col = base + vec3(beatLift) * edgeBand * (0.6 + cover);
+
+  // Subtle dark rim for definition — neutral, not colored.
+  float rim = smoothstep(radius - 0.02, radius, dist);
+  col *= 1.0 - rim * 0.4;
+
   gl_FragColor = vec4(col, mask);
 }`;
 
@@ -83,7 +91,6 @@ export class IconArtVisualizer implements Visualizer {
       this.iconMesh.geometry.dispose();
       this.iconMat?.dispose();
     }
-    const [ar, ag, ab] = hexToRgb(this.settings?.colorPrimary ?? "#36e0a8");
     const [br, bg, bb] = hexToRgb(this.settings?.colorSecondary ?? "#9a34d5");
     this.iconMat = new THREE.ShaderMaterial({
       vertexShader: ICON_VERT,
@@ -94,7 +101,6 @@ export class IconArtVisualizer implements Visualizer {
       uniforms: {
         uTex: { value: this.tex },
         uHasTex: { value: this.hasTex },
-        uGlowA: { value: new THREE.Color(ar, ag, ab) },
         uGlowB: { value: new THREE.Color(br, bg, bb) },
         uPulse: { value: 0 },
         uBob: { value: 0 },
@@ -138,10 +144,8 @@ export class IconArtVisualizer implements Visualizer {
   applySettings(settings: BaseVizSettings) {
     this.settings = settings;
     this.nebula.applySettings(settings);
-    const [ar, ag, ab] = hexToRgb(settings.colorPrimary);
     const [br, bg, bb] = hexToRgb(settings.colorSecondary);
     if (this.iconMat) {
-      (this.iconMat.uniforms.uGlowA.value as THREE.Color).setRGB(ar, ag, ab);
       (this.iconMat.uniforms.uGlowB.value as THREE.Color).setRGB(br, bg, bb);
     }
     // Rebuild not needed; colors are uniforms. Ensure the icon exists.
