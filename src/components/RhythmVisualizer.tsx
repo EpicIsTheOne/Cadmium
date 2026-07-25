@@ -51,6 +51,12 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
   // is active, so the sidebar / context seams can glow with the beat.
   const energyRef = useRef(0);
   const lastEnergy = useRef<string>("");
+  // Throttle the --ambient-energy write to ~15fps: a breathing seam glow does
+  // not need 60Hz, and writing a custom property on :root every frame forces a
+  // style recalc of the dependent subtrees (sidebar/context rail) that makes
+  // the ambient host stutter where the stage host (which never writes it) stays
+  // smooth.
+  const energyClock = useRef(0);
 
   const resolvedViz = selectedViz ?? (typeof localStorage !== "undefined" ? localStorage.getItem("cadmium.viz.selected") ?? DEFAULT_VISUALIZER_ID : DEFAULT_VISUALIZER_ID);
   const def = getVisualizerDef(resolvedViz);
@@ -160,15 +166,22 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
       // sidebar / context seams glow with the beat. Use a fairly linear,
       // level-heavy mix with a high floor so even moderate passages light up
       // the seams clearly, and a slower decay so the glow breathes with the
-      // music instead of flickering. Only the ambient host writes it.
+      // music instead of flickering. Only the ambient host writes it — and it
+      // writes at most ~15fps (energyClock) so the :root custom-property
+      // invalidation never thrashes the dependent subtrees and stutters the
+      // visualizer like the stage host (which never writes it) does not.
       if (ambient && typeof document !== "undefined") {
-        const raw = Math.min(1, 0.35 * frame.bass + 0.5 * frame.level + 0.15 * frame.treble);
-        const energy = Math.min(1, 0.18 + raw * 0.95);
-        energyRef.current = Math.max(energyRef.current * 0.9, energy);
-        const e = energyRef.current.toFixed(3);
-        if (e !== lastEnergy.current) {
-          document.documentElement.style.setProperty("--ambient-energy", e);
-          lastEnergy.current = e;
+        const now = performance.now();
+        if (now - energyClock.current >= 66) {
+          energyClock.current = now;
+          const raw = Math.min(1, 0.35 * frame.bass + 0.5 * frame.level + 0.15 * frame.treble);
+          const energy = Math.min(1, 0.18 + raw * 0.95);
+          energyRef.current = Math.max(energyRef.current * 0.9, energy);
+          const e = energyRef.current.toFixed(3);
+          if (e !== lastEnergy.current) {
+            document.documentElement.style.setProperty("--ambient-energy", e);
+            lastEnergy.current = e;
+          }
         }
       }
     };

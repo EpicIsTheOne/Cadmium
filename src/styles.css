@@ -139,15 +139,18 @@ input:focus-visible {
 .app-shell.ambient-active .bottom-player { background: rgba(4, 6, 12, 0.78); }
 /* Inner seams glow with the music while ambient is on. Stacked shadows so the
    glow reads clearly: a tight bright core + a wide soft halo, both scaled by
-   --ambient-energy (bass-weighted, 0..1). */
+   --ambient-energy (bass-weighted, 0..1). will-change keeps the glow
+   recompute off the main paint path so the visualizer stays smooth. */
 .app-shell.ambient-active .sidebar {
   border-right: 1px solid var(--accent-line);
+  will-change: box-shadow;
   box-shadow:
     1px 0 14px calc(3px + var(--ambient-energy) * 34px) var(--accent-glow),
     1px 0 30px calc(2px + var(--ambient-energy) * 60px) var(--accent-glow);
 }
 .app-shell.ambient-active .context-panel {
   border-left: 1px solid var(--accent-line);
+  will-change: box-shadow;
   box-shadow:
     -1px 0 14px calc(3px + var(--ambient-energy) * 34px) var(--accent-glow),
     -1px 0 30px calc(2px + var(--ambient-energy) * 60px) var(--accent-glow);
