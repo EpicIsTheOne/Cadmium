@@ -41,7 +41,6 @@ export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, o
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [editMode, setEditMode] = useState<CollectionEditMode | null>(null);
-  const [editId, setEditId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const openMenu = (event: React.MouseEvent) => {
@@ -61,7 +60,6 @@ export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, o
 
   const closeModal = () => {
     setEditMode(null);
-    setEditId(null);
   };
 
   const submitCollection = async (values: CollectionEditValues) => {
@@ -83,17 +81,6 @@ export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, o
         if (values.description || values.artworkDataUrl) {
           await musicProvider.updateAlbum(id, { description: values.description, artwork: values.artworkDataUrl, artistId });
         }
-      } else if (editMode === "edit-playlist") {
-        const id = editId as PlaylistId;
-        await musicProvider.updatePlaylist(id, { name: values.name, description: values.description, artwork: values.artworkDataUrl });
-      } else if (editMode === "edit-album") {
-        const id = editId as AlbumId;
-        let artistId: ArtistId | null = null;
-        if (values.artist) {
-          const existing = await musicProvider.resolveArtistByName(values.artist);
-          artistId = existing;
-        }
-        await musicProvider.updateAlbum(id, { title: values.name, description: values.description, artwork: values.artworkDataUrl, artistId });
       }
       onCollectionChanged();
       closeModal();
@@ -101,14 +88,6 @@ export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, o
       setBusy(false);
     }
   };
-
-  const openEdit = (mode: "edit-playlist" | "edit-album", id: string, name: string, artist?: string, description?: string, artworkDataUrl?: string) => {
-    setEditId(id);
-    setEditMode(mode);
-    setEditInitial({ name, artist: artist ?? "", description: description ?? "", artworkDataUrl });
-  };
-
-  const [editInitial, setEditInitial] = useState<CollectionEditValues>({ name: "", description: "", artist: "" });
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -185,34 +164,10 @@ export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, o
         <label className="sidebar-library-search"><Icon name="search" size={15} /><input onChange={(event) => setQuery(event.target.value)} placeholder="Search your library" value={query} /></label>
         <div className="sidebar-library-list">
           {libraryRows.length ? libraryRows.map((row) => (
-            <div className="sidebar-library-row-wrap" key={`${row.kind}-${row.id}`}>
-              <button className="sidebar-library-row" onClick={() => onOpenCollection(row.kind, row.id)} type="button">
-                <img alt="" src={row.artwork || orbitArt} />
-                <span><strong>{row.title}</strong><small>{row.meta}</small></span>
-              </button>
-              {(row.kind === "playlist" || row.kind === "album") && musicProvider ? (
-                <button
-                  aria-label={`Edit ${row.title}`}
-                  className="sidebar-library-edit"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const id = row.id;
-                    if (row.kind === "playlist") {
-                      const playlist = library?.playlistsById[id as PlaylistId];
-                      openEdit("edit-playlist", id, playlist?.name ?? row.title, undefined, playlist?.description, playlist?.artwork?.src);
-                    } else {
-                      const album = library?.albumsById[id as AlbumId];
-                      const artistName = album?.artistIds.map((artistId) => library?.artistsById[artistId]?.name).filter(Boolean).join(", ") ?? "";
-                      openEdit("edit-album", id, album?.title ?? row.title, artistName, album?.description, album?.artwork?.src);
-                    }
-                  }}
-                  title="Edit"
-                  type="button"
-                >
-                  <Icon name="pencil" size={14} />
-                </button>
-              ) : null}
-            </div>
+            <button className="sidebar-library-row" key={`${row.kind}-${row.id}`} onClick={() => onOpenCollection(row.kind, row.id)} type="button">
+              <img alt="" src={row.artwork || orbitArt} />
+              <span><strong>{row.title}</strong><small>{row.meta}</small></span>
+            </button>
           )) : <p className="sidebar-library-empty">{library ? "No matching collections." : "Add music to build your library."}</p>}
         </div>
       </section>
@@ -225,10 +180,10 @@ export function Sidebar({ activeScreen, library, onNavigate, onOpenCollection, o
 
       {editMode ? (
         <CollectionEditModal
-          initial={editInitial}
+          initial={{ name: "", description: "", artist: "" }}
           mode={editMode}
           provider={musicProvider ?? null}
-          onCancel={() => { setEditMode(null); setEditId(null); }}
+          onCancel={() => { setEditMode(null); }}
           onSubmit={submitCollection}
         />
       ) : null}
