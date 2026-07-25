@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import orbitArt from "../assets/cadmium-orbit.svg";
 import type { MusicProvider, NormalizedLibrary, TrackId } from "../domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
-import { getAppearance } from "../playback/appearance";
+import { getAppearance, subscribeAppearance } from "../playback/appearance";
 import { RhythmVisualizer } from "./RhythmVisualizer";
 import { Icon } from "./Icon";
 import { TrackMenu } from "./TrackMenu";
@@ -21,7 +21,7 @@ export function BottomPlayer({ library, favoriteTrackIds, onToggleFavorite, prov
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenQueue, setFullscreenQueue] = useState(false);
   const [fsTab, setFsTab] = useState<"artist" | "credits">("credits");
-  const [rhythmFs, setRhythmFs] = useState<boolean>(() => getAppearance().rhythmInFullscreen);
+  const rhythmFs = useSyncExternalStore(subscribeAppearance, () => getAppearance().rhythmInFullscreen, () => false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const track = playbackStore.getTrack();
   const duration = state.durationMs || track?.durationMs || 0;

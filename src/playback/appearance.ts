@@ -1,6 +1,8 @@
 /**
  * Appearance preferences that live outside the theme-accent system — small
- * product toggles persisted locally so they survive restarts.
+ * product toggles persisted locally so they survive restarts. Implemented as a
+ * tiny observable store so every mounted consumer (the full-screen player, the
+ * Settings panel) reacts live when the value changes, without prop drilling.
  */
 
 const STORAGE_KEY = "cadmium.appearance";
@@ -13,6 +15,10 @@ export interface AppearanceSettings {
 const DEFAULTS: AppearanceSettings = {
   rhythmInFullscreen: false,
 };
+
+// In-memory cache + subscribers so toggles propagate to already-mounted views.
+let cache: AppearanceSettings = read();
+const listeners = new Set<() => void>();
 
 function read(): AppearanceSettings {
   try {
@@ -36,11 +42,19 @@ function write(settings: AppearanceSettings): void {
 }
 
 export function getAppearance(): AppearanceSettings {
-  return read();
+  return cache;
 }
 
 export function setAppearance(patch: Partial<AppearanceSettings>): AppearanceSettings {
-  const next = { ...read(), ...patch };
+  const next = { ...cache, ...patch };
+  cache = next;
   write(next);
+  listeners.forEach((listener) => listener());
   return next;
+}
+
+/** Subscribe to live changes (for useSyncExternalStore). Returns an unsubscribe fn. */
+export function subscribeAppearance(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

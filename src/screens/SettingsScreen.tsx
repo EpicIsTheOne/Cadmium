@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { MusicProvider } from "../domain/media";
 import { usePlaybackState, playbackStore } from "../playback/playback-store";
 import type { WatchedFolder } from "../providers/local-library-provider";
 import { Icon } from "../components/Icon";
 import { THEMES, applyTheme, getTheme } from "../theme";
-import { getAppearance, setAppearance } from "../playback/appearance";
+import { getAppearance, setAppearance, subscribeAppearance } from "../playback/appearance";
 
 interface SettingsScreenProps {
   provider: MusicProvider;
@@ -46,7 +46,7 @@ export function SettingsScreen({
   const [tab, setTab] = useState<TabId>("general");
   const [query, setQuery] = useState("");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [appearance, setAppearanceState] = useState(getAppearance);
+  const appearance = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
 
   useLayoutEffect(() => {
     const root = settingsRef.current;
@@ -66,7 +66,7 @@ export function SettingsScreen({
   };
 
   const toggleRhythmFullscreen = () => {
-    setAppearanceState(setAppearance({ rhythmInFullscreen: !appearance.rhythmInFullscreen }));
+    setAppearance({ rhythmInFullscreen: !appearance.rhythmInFullscreen });
   };
 
   return (
