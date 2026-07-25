@@ -43,8 +43,8 @@ export class GalaxyOrbitVisualizer implements Visualizer {
   private settings: BaseVizSettings | null = null;
   private bodyCount = 6000;
 
-  start(canvas: HTMLCanvasElement): boolean {
-    this.renderer = createRenderer(canvas);
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean {
+    this.renderer = createRenderer(canvas, opts?.maxPixelRatio);
     if (!this.renderer) return false;
     this.buildPoints(this.bodyCount);
     this.camera.position.set(0, 0, 18);

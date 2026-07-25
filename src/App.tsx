@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getAppearance, subscribeAppearance } from "./playback/appearance";
 import { Icon } from "./components/Icon";
 import { BottomPlayer } from "./components/BottomPlayer";
+import { AmbientRhythmLayer } from "./components/AmbientRhythmLayer";
 import { ContextPanel } from "./components/ContextPanel";
 import { DjPanel } from "./components/DjPanel";
 import { Sidebar, type ScreenId } from "./components/Sidebar";
@@ -44,6 +46,20 @@ const zeroCounts = {
   playlists: 0,
 };
 
+// Fallback library shape so the ambient layer can render before the real
+// library graph loads (it self-gates on having a current track anyway).
+const emptyLibrary: NormalizedLibrary = {
+  tracksById: {},
+  albumsById: {},
+  artistsById: {},
+  playlistsById: {},
+  albumOrder: [],
+  playlistOrder: [],
+  artistOrder: [],
+  trackOrder: [],
+  recentTrackIds: [],
+};
+
 export default function App() {
   const provider = useMemo(() => createMusicProvider(), []);
   const [activeScreen, setActiveScreen] = useState<ScreenId>("home");
@@ -59,6 +75,9 @@ export default function App() {
   const [aiFocusVersion, setAiFocusVersion] = useState(0);
   const [djOpen, setDjOpen] = useState(false);
   const [djActivity, setDjActivity] = useState("idle");
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const [ambientOn, setAmbientOn] = useState(getAppearance().ambientRhythm);
+  useEffect(() => subscribeAppearance(() => setAmbientOn(getAppearance().ambientRhythm)), []);
   const [collection, setCollection] = useState<{ kind: CollectionKind; id: string } | null>(null);
   const playbackInitialized = useRef(false);
 
@@ -352,7 +371,12 @@ export default function App() {
   };
 
   return (
-    <div className={"app-shell " + (!contextPanelOpen ? "context-collapsed" : "")}>
+    <div className={"app-shell " + (!contextPanelOpen ? "context-collapsed " : "") + (ambientOn && activeScreen !== "rhythm" && !fullscreenOpen ? "ambient-active " : "")}>
+      <AmbientRhythmLayer
+        library={library ?? emptyLibrary}
+        suppressed={activeScreen === "rhythm" || fullscreenOpen}
+      />
+
       <Sidebar
         activeScreen={activeScreen}
         library={library ?? undefined}
@@ -412,7 +436,7 @@ export default function App() {
           provider={provider instanceof LocalLibraryProvider ? provider : null}
         />
       ) : null}
-      <BottomPlayer favoriteTrackIds={favoriteTrackIds} library={library ?? undefined} onToggleFavorite={handleToggleFavorite} provider={provider instanceof LocalLibraryProvider ? provider : null} onLibraryChanged={loadLibrary} />
+      <BottomPlayer favoriteTrackIds={favoriteTrackIds} library={library ?? undefined} onToggleFavorite={handleToggleFavorite} provider={provider instanceof LocalLibraryProvider ? provider : null} onLibraryChanged={loadLibrary} onFullscreenChange={setFullscreenOpen} />
       {library && provider instanceof LocalLibraryProvider ? <DjPanel library={library} onActivityChange={setDjActivity} onClose={() => setDjOpen(false)} open={djOpen} provider={provider} /> : null}
 
       {isFolderDragActive ? <div className="folder-drop-overlay" role="status"><div><Icon name="folder" size={42} /><strong>Drop music folders to add them</strong><span>Cadmium will scan supported audio files recursively.</span></div></div> : null}

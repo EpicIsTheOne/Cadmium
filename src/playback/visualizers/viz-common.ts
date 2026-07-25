@@ -2,10 +2,10 @@ import * as THREE from "three";
 import type { BaseVizSettings, Visualizer } from "./types";
 
 /** Shared renderer bootstrap. Captures WebGL-unavailable as start()=false. */
-export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer | null {
+export function createRenderer(canvas: HTMLCanvasElement, maxPixelRatio?: number): THREE.WebGLRenderer | null {
   try {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio ?? 1.5));
     return renderer;
   } catch {
     return null;

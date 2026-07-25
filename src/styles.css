@@ -98,6 +98,7 @@ input:focus-visible {
 }
 
 .app-shell {
+  position: relative;
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr) 384px;
   grid-template-rows: minmax(0, 1fr) 88px;
@@ -109,6 +110,19 @@ input:focus-visible {
     linear-gradient(300deg, rgba(82, 102, 255, 0.06), transparent 33%),
     #080a14;
 }
+
+/* Decorative ambient Rhythm layer: lowest local layer, never interactive. */
+.ambient-rhythm { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.ambient-rhythm canvas { width: 100%; height: 100%; display: block; }
+
+/* Ambient-active: let the canvas show through the shell background while
+   keeping panels + text readable via a dark veil over the workspace. */
+.app-shell.ambient-active { background: transparent; }
+.app-shell.ambient-active .workspace { background: rgba(3, 5, 13, 0.55); }
+.app-shell.ambient-active .topbar { background: rgba(3, 5, 13, 0.5); }
+.app-shell.ambient-active .sidebar,
+.app-shell.ambient-active .context-panel,
+.app-shell.ambient-active .bottom-player { background: rgba(7, 9, 15, 0.92); }
 
 .app-shell.context-collapsed {
   grid-template-columns: 244px minmax(0, 1fr);

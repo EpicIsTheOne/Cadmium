@@ -40,8 +40,8 @@ export class WaveformRibbonVisualizer implements Visualizer {
   private samples = 128;
   private scrollSpeed = 1.0;
 
-  start(canvas: HTMLCanvasElement): boolean {
-    this.renderer = createRenderer(canvas);
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean {
+    this.renderer = createRenderer(canvas, opts?.maxPixelRatio);
     if (!this.renderer) return false;
     this.buildLine(this.samples);
     this.camera.position.set(0, 0, 11);

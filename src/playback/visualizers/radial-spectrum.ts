@@ -30,8 +30,8 @@ export class RadialSpectrumVisualizer implements Visualizer {
   private barCount = 48;
   private ringRadius = 5.0;
 
-  start(canvas: HTMLCanvasElement): boolean {
-    this.renderer = createRenderer(canvas);
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean {
+    this.renderer = createRenderer(canvas, opts?.maxPixelRatio);
     if (!this.renderer) return false;
     this.renderer.autoClear = true;
     this.renderer.setClearColor(0x05060c, 1);

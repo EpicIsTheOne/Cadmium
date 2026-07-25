@@ -76,14 +76,31 @@ export async function decodeWaveform(src: string, buckets = 240): Promise<number
 
 // Fetch + decode an audio file into an AudioBuffer (real PCM). Single source of
 // truth for both the waveform and the BPM detector so each track is fetched once.
+//
+// A bounded LRU cache keyed by locator means host transitions
+// (ambient ↔ stage ↔ fullscreen) and track revisits reuse the same decode
+// instead of refetching/decoding the same file. Unbounded retention of
+// AudioBuffers is avoided via a small cap.
+const DECODE_CACHE = new Map<string, AudioBuffer>();
+const DECODE_CACHE_LIMIT = 8;
+
 export async function decodeBuffer(src: string): Promise<AudioBuffer | null> {
   const audioCtx = ensureContext();
   if (!audioCtx) return null;
+  const cached = DECODE_CACHE.get(src);
+  if (cached) return cached;
   try {
     const response = await fetch(src);
     if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
-    return await audioCtx.decodeAudioData(arrayBuffer);
+    const buffer = await audioCtx.decodeAudioData(arrayBuffer);
+    // LRU eviction: drop the oldest entry when over the cap.
+    if (DECODE_CACHE.size >= DECODE_CACHE_LIMIT) {
+      const oldest = DECODE_CACHE.keys().next().value;
+      if (oldest !== undefined) DECODE_CACHE.delete(oldest);
+    }
+    DECODE_CACHE.set(src, buffer);
+    return buffer;
   } catch {
     return null;
   }

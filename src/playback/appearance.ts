@@ -15,12 +15,16 @@ export interface AppearanceSettings {
   /** When the Rhythm visualizer is on in full-screen, hide art/metadata/tabs for
    *  an unobstructed "full rhythm" experience. */
   fullscreenImmersive: boolean;
+  /** Decorative ambient Rhythm layer behind the ordinary three-panel desktop
+   *  layout. Opt-in, uses the selected visualizer + saved settings. */
+  ambientRhythm: boolean;
 }
 
 const DEFAULTS: AppearanceSettings = {
   rhythmInFullscreen: false,
   fullscreenBottomBar: false,
   fullscreenImmersive: false,
+  ambientRhythm: false,
 };
 
 // In-memory cache + subscribers so toggles propagate to already-mounted views.
@@ -36,6 +40,7 @@ function read(): AppearanceSettings {
       rhythmInFullscreen: Boolean(parsed.rhythmInFullscreen ?? DEFAULTS.rhythmInFullscreen),
       fullscreenBottomBar: Boolean(parsed.fullscreenBottomBar ?? DEFAULTS.fullscreenBottomBar),
       fullscreenImmersive: Boolean(parsed.fullscreenImmersive ?? DEFAULTS.fullscreenImmersive),
+      ambientRhythm: Boolean(parsed.ambientRhythm ?? DEFAULTS.ambientRhythm),
     };
   } catch {
     return { ...DEFAULTS };

@@ -48,8 +48,8 @@ export class PlasmaShaderVisualizer implements Visualizer {
   };
   private settings: BaseVizSettings | null = null;
 
-  start(canvas: HTMLCanvasElement): boolean {
-    this.renderer = createRenderer(canvas);
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean {
+    this.renderer = createRenderer(canvas, opts?.maxPixelRatio);
     if (!this.renderer) return false;
     const quad = makeBackgroundQuad(FRAG, this.uniforms);
     this.scene.add(quad.scene.children[0]);

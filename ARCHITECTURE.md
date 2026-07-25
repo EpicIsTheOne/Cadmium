@@ -38,6 +38,15 @@ The existing `EmptyMusicProvider` and in-memory provider remain useful for contr
 
 Home shows real counts and recent plays; Search queries Rust-backed normalized records; Library lists available and unavailable tracks plus watched-folder controls; Settings shows provider capabilities, folders, and persisted volume; the context panel and bottom player reflect the singleton queue/playback state. Stories, Lore, Mood Map, AI Playlists, Mixes, Radio, and Rhythm consume only typed `LocalLibraryProvider` discovery results.
 
+### Rhythm visualizer hosts (single-host rule)
+`src/components/RhythmVisualizer.tsx` owns WebGL context creation, PCM decoding, the `ResizeObserver`, the animation loop, and disposal. Exactly one host may own a context + RAF loop at a time:
+
+- `ambient` — the ordinary three-panel layout when Ambient Rhythm is enabled (`AppearanceSettings.ambientRhythm`).
+- `stage` — the dedicated Rhythm screen.
+- `fullscreen` — the full-screen now-playing overlay when Rhythm-in-fullscreen is enabled.
+
+Priority is `fullscreen` over `stage` over `ambient`. The ambient host (`src/components/AmbientRhythmLayer.tsx`) is mounted as the first child of `.app-shell` and is suppressed (`suppressed`) whenever the Rhythm screen or the full-screen overlay is active, so transitions stop and dispose the previous host before the next starts. No track, unavailable/non-local playback, paused audio, a hidden document, zero-sized hosts, `prefers-reduced-motion`, WebGL context loss, or a failed `start()` all yield a quiet static shell — never a fabricated or crashing visual. `src/playback/visualizer.ts` holds a bounded LRU decode cache keyed by track locator so host transitions and track revisits reuse the same PCM instead of refetching. All visualizers share `createRenderer` (which honors the ambient/fullscreen pixel-ratio cap) and the same `Visualizer` contract in `src/playback/visualizers/`.
+
 AI Playlist Director uses a single managed `codex app-server --stdio` process and the machine's existing Codex/ChatGPT OAuth session. The renderer receives only sanitized connection state. Generation runs in ephemeral read-only threads with approvals and tools declined, sends a bounded metadata catalog without filesystem paths, validates returned track IDs locally, and falls back to deterministic local ranking when Codex is unavailable. Generated playlists are persisted in SQLite and exposed through the normalized playlist graph.
 
 ## AI DJ and voice runtime

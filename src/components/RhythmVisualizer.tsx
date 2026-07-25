@@ -20,8 +20,11 @@ interface RhythmVisualizerProps {
   readonly settings?: RhythmSettings;
   readonly className?: string;
   /** When mounted behind the full-screen now-playing view, cap the device
-   *  pixel ratio so the (much larger) canvas doesn't tank the frame rate. */
+   *  pixel ratio so the (much larger) canvas isn't tank the frame rate. */
   readonly fullscreen?: boolean;
+  /** Ambient quality profile: a conservative, low-cost render behind the
+   *  ordinary desktop layout (lower pixel-ratio cap, quieter motion). */
+  readonly ambient?: boolean;
 }
 
 /**
@@ -31,7 +34,7 @@ interface RhythmVisualizerProps {
  * per track and sampled at audio.currentTime against the shared <audio>
  * element, so native playback is never hijacked.
  */
-export function RhythmVisualizer({ currentTrackId, currentTrack, library, selectedViz, settings, className, fullscreen }: RhythmVisualizerProps) {
+export function RhythmVisualizer({ currentTrackId, currentTrack, library, selectedViz, settings, className, fullscreen, ambient }: RhythmVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const vizRef = useRef<Visualizer | null>(null);
   const analyzerRef = useRef<PcmAudioAnalyzer>(new PcmAudioAnalyzer());
@@ -83,8 +86,9 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const maxPixelRatio = ambient ? 1.0 : fullscreen ? 1.25 : undefined;
     const viz = def.create();
-    const ok = viz.start(canvas, fullscreen ? { maxPixelRatio: 1.25 } : undefined);
+    const ok = viz.start(canvas, maxPixelRatio !== undefined ? { maxPixelRatio } : undefined);
     vizRef.current = ok ? viz : null;
     const seed: RhythmSettings = resolvedSettings.colorFromArt && artPalette
       ? { ...resolvedSettings, colorPrimary: artPalette.primary, colorSecondary: artPalette.secondary, colorBackground: artPalette.background }
@@ -103,11 +107,31 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
     ro.observe(canvas);
     resize();
 
+    // WebGL context loss: stop the loop immediately and surface a quiet
+    // unavailable state. Do not retry continuously.
+    const lostRef = { current: false };
+    const onLost = (event: Event) => { event.preventDefault(); lostRef.current = true; };
+    const onRestored = () => { lostRef.current = false; };
+    canvas.addEventListener("webglcontextlost", onLost as EventListener);
+    canvas.addEventListener("webglcontextrestored", onRestored as EventListener);
+
     const FADE = 0.08;
 
     const loop = () => {
+      raf = requestAnimationFrame(loop);
+      const viz = vizRef.current;
+      if (!viz || lostRef.current) return;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      // Zero-sized hosts and hidden documents produce nothing useful and
+      // waste GPU/CPU — idle (keep the last frame) until they recover.
+      if (w <= 0 || h <= 0 || (typeof document !== "undefined" && document.hidden)) return;
       const audio = playbackStore.getAudioElement();
       const decoded = decodedRef.current;
+      const isPlaying = !audio || !audio.paused;
+      // Paused / no audio: preserve the last rendered frame without
+      // advancing the animation. Resumes from the current position.
+      if (!isPlaying) return;
       // Note: spectrum is intentionally skipped here (wantSpectrum=false) — no
       // current visualizer consumes it, and the 1024-pt FFT was the main source
       // of full-screen frame drops.
@@ -124,14 +148,13 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
       const last = lastApplied.current;
       if (!last || last.primary !== cur.primary || last.secondary !== cur.secondary || last.background !== cur.background) {
         const effective: RhythmSettings = { ...resolvedSettings, colorPrimary: cur.primary, colorSecondary: cur.secondary, colorBackground: cur.background };
-        vizRef.current?.applySettings(effective);
+        viz.applySettings(effective);
         lastApplied.current = { primary: cur.primary, secondary: cur.secondary, background: cur.background };
       }
-      vizRef.current?.update(frame, performance.now() / 1000);
-      raf = requestAnimationFrame(loop);
+      viz.update(frame, performance.now() / 1000);
     };
     let raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); viz.dispose(); };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); canvas.removeEventListener("webglcontextlost", onLost as EventListener); canvas.removeEventListener("webglcontextrestored", onRestored as EventListener); viz.dispose(); };
   }, [def, resolvedSettings, artPalette, artSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Decode once per track: the same PCM powers the live visualizer.

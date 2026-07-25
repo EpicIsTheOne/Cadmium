@@ -77,6 +77,10 @@ export function SettingsScreen({
     setAppearance({ fullscreenImmersive: !appearance.fullscreenImmersive });
   };
 
+  const toggleAmbientRhythm = () => {
+    setAppearance({ ambientRhythm: !appearance.ambientRhythm });
+  };
+
   return (
     <div className="settings-screen" ref={settingsRef}>
       <header className="settings-header">
@@ -486,22 +490,40 @@ export function SettingsScreen({
 
               <button
                 aria-pressed={appearance.fullscreenImmersive}
-                className={`settings-toggle ${appearance.fullscreenImmersive ? "is-on" : ""}`}
-                onClick={toggleFsImmersive}
-                type="button"
-              >
-                <span className="settings-toggle-icon">
-                  <Icon name={appearance.fullscreenImmersive ? "play" : "pause"} size={15} />
-                </span>
-                <span className="settings-toggle-copy">
-                  <strong>Full rhythm mode</strong>
-                  <small>{appearance.fullscreenImmersive ? "Hides art, metadata, and tabs for an unobstructed visualizer." : "Full rhythm keeps the album art and info visible."}</small>
-                </span>
-                <span className="settings-switch" aria-hidden="true">
-                  <span className="settings-switch-knob" />
-                </span>
-              </button>
-            </article>
+                  className={`settings-toggle ${appearance.fullscreenImmersive ? "is-on" : ""}`}
+                  onClick={toggleFsImmersive}
+                  type="button"
+                >
+                  <span className="settings-toggle-icon">
+                    <Icon name={appearance.fullscreenImmersive ? "play" : "pause"} size={15} />
+                  </span>
+                  <span className="settings-toggle-copy">
+                    <strong>Full rhythm mode</strong>
+                    <small>{appearance.fullscreenImmersive ? "Hides art, metadata, and tabs for an unobstructed visualizer." : "Full rhythm keeps the album art and info visible."}</small>
+                  </span>
+                  <span className="settings-switch" aria-hidden="true">
+                    <span className="settings-switch-knob" />
+                  </span>
+                </button>
+
+                <button
+                  aria-pressed={appearance.ambientRhythm}
+                  className={`settings-toggle ${appearance.ambientRhythm ? "is-on" : ""}`}
+                  onClick={toggleAmbientRhythm}
+                  type="button"
+                >
+                  <span className="settings-toggle-icon">
+                    <Icon name={appearance.ambientRhythm ? "play" : "pause"} size={15} />
+                  </span>
+                  <span className="settings-toggle-copy">
+                    <strong>Ambient rhythm</strong>
+                    <small>{appearance.ambientRhythm ? "Visualizer drifts behind Home, Search, Library, and Settings." : "Ordinary screens use the static background."}</small>
+                  </span>
+                  <span className="settings-switch" aria-hidden="true">
+                    <span className="settings-switch-knob" />
+                  </span>
+                </button>
+                </article>
           </section>
         </div>
       )}
