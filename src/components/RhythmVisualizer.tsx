@@ -51,12 +51,12 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
   // is active, so the sidebar / context seams can glow with the beat.
   const energyRef = useRef(0);
   const lastEnergy = useRef<string>("");
-  // Throttle the --ambient-energy write to ~15fps: a breathing seam glow does
-  // not need 60Hz, and writing a custom property on :root every frame forces a
-  // style recalc of the dependent subtrees (sidebar/context rail) that makes
-  // the ambient host stutter where the stage host (which never writes it) stays
-  // smooth.
+  // Throttle the shell-local --ambient-energy write to ~15fps. Keeping the
+  // custom property on .app-shell (not :root) confines style invalidation to
+  // the ambient subtree; the seam itself uses compositor-friendly
+  // opacity/transform instead of repaint-heavy box-shadow.
   const energyClock = useRef(0);
+  const ambientShellRef = useRef<HTMLElement | null>(null);
 
   const resolvedViz = selectedViz ?? (typeof localStorage !== "undefined" ? localStorage.getItem("cadmium.viz.selected") ?? DEFAULT_VISUALIZER_ID : DEFAULT_VISUALIZER_ID);
   const def = getVisualizerDef(resolvedViz);
@@ -96,6 +96,7 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (ambient) ambientShellRef.current = canvas.closest<HTMLElement>(".app-shell");
     const maxPixelRatio = ambient ? 1.0 : fullscreen ? 1.25 : undefined;
     const viz = def.create();
     const ok = viz.start(canvas, maxPixelRatio !== undefined ? { maxPixelRatio } : undefined);
@@ -179,14 +180,14 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
           energyRef.current = Math.max(energyRef.current * 0.9, energy);
           const e = energyRef.current.toFixed(3);
           if (e !== lastEnergy.current) {
-            document.documentElement.style.setProperty("--ambient-energy", e);
+            ambientShellRef.current?.style.setProperty("--ambient-energy", e);
             lastEnergy.current = e;
           }
         }
       }
     };
     let raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); canvas.removeEventListener("webglcontextlost", onLost as EventListener); canvas.removeEventListener("webglcontextrestored", onRestored as EventListener); viz.dispose(); if (ambient && typeof document !== "undefined") { document.documentElement.style.removeProperty("--ambient-energy"); lastEnergy.current = ""; energyRef.current = 0; } };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); canvas.removeEventListener("webglcontextlost", onLost as EventListener); canvas.removeEventListener("webglcontextrestored", onRestored as EventListener); viz.dispose(); if (ambient) { ambientShellRef.current?.style.removeProperty("--ambient-energy"); ambientShellRef.current = null; lastEnergy.current = ""; energyRef.current = 0; energyClock.current = 0; } };
   }, [def, resolvedSettings, artPalette, artSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Decode once per track: the same PCM powers the live visualizer.

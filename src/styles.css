@@ -120,8 +120,8 @@ input:focus-visible {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.6;
-  filter: saturate(0.85) brightness(0.92);
+  opacity: 0.52;
+  contain: strict;
 }
 .ambient-rhythm canvas { width: 100%; height: 100%; display: block; }
 
@@ -137,23 +137,40 @@ input:focus-visible {
 .app-shell.ambient-active .context-panel,
 .app-shell.ambient-active .topbar,
 .app-shell.ambient-active .bottom-player { background: rgba(4, 6, 12, 0.78); }
-/* Inner seams glow with the music while ambient is on. Stacked shadows so the
-   glow reads clearly: a tight bright core + a wide soft halo, both scaled by
-   --ambient-energy (bass-weighted, 0..1). will-change keeps the glow
-   recompute off the main paint path so the visualizer stays smooth. */
+/* Inner seams glow with the music while ambient is on. These are fixed-size
+   gradient layers animated with opacity + transform only (compositor-friendly):
+   unlike large animated box-shadows, they do not repaint the panels every tick. */
+.app-shell.ambient-active .sidebar,
+.app-shell.ambient-active .context-panel { position: relative; }
+.app-shell.ambient-active .sidebar::after,
+.app-shell.ambient-active .context-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 84px;
+  z-index: 4;
+  pointer-events: none;
+  opacity: calc(0.22 + var(--ambient-energy) * 0.78);
+  will-change: opacity, transform;
+}
 .app-shell.ambient-active .sidebar {
   border-right: 1px solid var(--accent-line);
-  will-change: box-shadow;
-  box-shadow:
-    1px 0 14px calc(3px + var(--ambient-energy) * 34px) var(--accent-glow),
-    1px 0 30px calc(2px + var(--ambient-energy) * 60px) var(--accent-glow);
+}
+.app-shell.ambient-active .sidebar::after {
+  right: -84px;
+  transform-origin: left center;
+  transform: scaleX(calc(0.32 + var(--ambient-energy) * 0.68));
+  background: linear-gradient(90deg, var(--accent-glow), transparent 88%);
 }
 .app-shell.ambient-active .context-panel {
   border-left: 1px solid var(--accent-line);
-  will-change: box-shadow;
-  box-shadow:
-    -1px 0 14px calc(3px + var(--ambient-energy) * 34px) var(--accent-glow),
-    -1px 0 30px calc(2px + var(--ambient-energy) * 60px) var(--accent-glow);
+}
+.app-shell.ambient-active .context-panel::before {
+  left: -84px;
+  transform-origin: right center;
+  transform: scaleX(calc(0.32 + var(--ambient-energy) * 0.68));
+  background: linear-gradient(270deg, var(--accent-glow), transparent 88%);
 }
 
 .app-shell.context-collapsed {
