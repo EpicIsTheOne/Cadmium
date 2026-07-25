@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import orbitArt from "../assets/cadmium-orbit.svg";
 import type { MusicProvider, NormalizedLibrary, TrackId } from "../domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
+import { getAppearance } from "../playback/appearance";
+import { RhythmVisualizer } from "./RhythmVisualizer";
 import { Icon } from "./Icon";
 import { TrackMenu } from "./TrackMenu";
 
@@ -19,6 +21,7 @@ export function BottomPlayer({ library, favoriteTrackIds, onToggleFavorite, prov
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenQueue, setFullscreenQueue] = useState(false);
   const [fsTab, setFsTab] = useState<"artist" | "credits">("credits");
+  const [rhythmFs, setRhythmFs] = useState<boolean>(() => getAppearance().rhythmInFullscreen);
   const listRef = useRef<HTMLDivElement | null>(null);
   const track = playbackStore.getTrack();
   const duration = state.durationMs || track?.durationMs || 0;
@@ -98,7 +101,15 @@ export function BottomPlayer({ library, favoriteTrackIds, onToggleFavorite, prov
       <div className="player-center"><div className="transport-buttons"><button aria-label="Shuffle" className={state.shuffle ? "is-active" : ""} onClick={() => playbackStore.setShuffle(!state.shuffle)} type="button"><Icon name="mixes" size={17} /></button><button aria-label="Previous" disabled={!track} onClick={() => void playbackStore.previous()} type="button"><Icon name="skip-back" size={18} /></button><button aria-label={state.isPlaying ? "Pause" : "Play"} className="play-button" disabled={!track || !track.available} onClick={() => void playbackStore.toggle()} type="button"><Icon name={state.isPlaying ? "pause" : "play"} size={20} /></button><button aria-label="Next" disabled={!track} onClick={() => void playbackStore.next()} type="button"><Icon name="skip-forward" size={18} /></button><button aria-label={`Repeat ${state.repeatMode}`} className={state.repeatMode !== "off" ? "is-active" : ""} onClick={() => playbackStore.setRepeatMode(state.repeatMode === "off" ? "all" : state.repeatMode === "all" ? "one" : "off")} type="button"><Icon name="refresh" size={17} /></button></div><div className="progress-row"><time>{formatTime(state.positionMs)}</time><input aria-label="Playback position" disabled={!track || duration <= 0} max={duration || 1} min="0" onChange={(event) => playbackStore.seek(Number(event.target.value))} type="range" value={Math.min(state.positionMs, duration || 1)} /><time>{formatTime(duration)}</time></div></div>
       <div className="player-tools"><button aria-expanded={openPanel === "queue"} aria-label="Queue" className={openPanel === "queue" ? "is-active" : ""} onClick={() => { if (fullscreen) { setFullscreenQueue((current) => !current); } else { setOpenPanel((current) => current === "queue" ? null : "queue"); } }} type="button"><Icon name="library" size={17} /></button><button aria-label={state.muted ? "Unmute" : "Mute"} onClick={() => playbackStore.toggleMute()} type="button"><Icon name="volume" size={18} /></button><input aria-label="Volume" max="1" min="0" onChange={(event) => playbackStore.setVolume(Number(event.target.value))} step=".01" type="range" value={state.volume} /><button aria-expanded={openPanel === "details"} aria-label="Now playing details" className={openPanel === "details" ? "is-active" : ""} onClick={() => setOpenPanel((current) => current === "details" ? null : "details")} type="button"><Icon name="panel" size={17} /></button><button aria-label="Full screen now playing" aria-pressed={fullscreen} className={fullscreen ? "is-active" : ""} onClick={() => setFullscreen((current) => !current)} type="button"><Icon name="expand" size={17} /></button></div>
     </footer>
-    <div className={`fullscreen-view ${fullscreen ? "is-open" : ""}`} aria-hidden={!fullscreen} style={{ ["--hero-art" as string]: `url(${track?.artwork?.src || orbitArt})` }}>
+    <div className={`fullscreen-view ${fullscreen ? "is-open" : ""} ${rhythmFs ? "has-rhythm" : ""}`} aria-hidden={!fullscreen} style={{ ["--hero-art" as string]: `url(${track?.artwork?.src || orbitArt})` }}>
+      {rhythmFs && track ? (
+        <RhythmVisualizer
+          className="fullscreen-rhythm"
+          currentTrackId={track.id}
+          currentTrack={track}
+          library={library ?? { tracksById: {}, albumsById: {}, artistsById: {}, playlistsById: {}, albumOrder: [], playlistOrder: [], artistOrder: [], trackOrder: [], recentTrackIds: [] }}
+        />
+      ) : null}
       <button aria-label="Close full screen" className="fullscreen-close" onClick={() => setFullscreen(false)} type="button"><Icon name="close" size={20} /></button>
       <div className="fullscreen-topbar">
         <button aria-pressed={fullscreenQueue} className={fullscreenQueue ? "is-active" : ""} onClick={() => setFullscreenQueue((current) => !current)} type="button"><Icon name="library" size={16} /> Queue</button>

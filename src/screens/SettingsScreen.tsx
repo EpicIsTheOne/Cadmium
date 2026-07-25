@@ -4,6 +4,7 @@ import { usePlaybackState, playbackStore } from "../playback/playback-store";
 import type { WatchedFolder } from "../providers/local-library-provider";
 import { Icon } from "../components/Icon";
 import { THEMES, applyTheme, getTheme } from "../theme";
+import { getAppearance, setAppearance } from "../playback/appearance";
 
 interface SettingsScreenProps {
   provider: MusicProvider;
@@ -45,6 +46,7 @@ export function SettingsScreen({
   const [tab, setTab] = useState<TabId>("general");
   const [query, setQuery] = useState("");
   const settingsRef = useRef<HTMLDivElement>(null);
+  const [appearance, setAppearanceState] = useState(getAppearance);
 
   useLayoutEffect(() => {
     const root = settingsRef.current;
@@ -61,6 +63,10 @@ export function SettingsScreen({
   const selectTheme = (id: string) => {
     setThemeId(id);
     applyTheme(id);
+  };
+
+  const toggleRhythmFullscreen = () => {
+    setAppearanceState(setAppearance({ rhythmInFullscreen: !appearance.rhythmInFullscreen }));
   };
 
   return (
@@ -421,6 +427,36 @@ export function SettingsScreen({
                   </button>
                 ))}
               </div>
+            </article>
+
+            <article className="panel-surface settings-card">
+              <div className="settings-card-heading">
+                <div className="settings-card-icon settings-card-icon-violet">
+                  <Icon name="expand" size={18} />
+                </div>
+                <div>
+                  <span className="eyebrow">Full screen</span>
+                  <h3>Rhythm visuals</h3>
+                </div>
+              </div>
+              <p className="settings-card-body">Show the live Rhythm visualizer behind the full-screen now-playing view. Uses your selected visualizer and its saved settings.</p>
+              <button
+                aria-pressed={appearance.rhythmInFullscreen}
+                className={`settings-toggle ${appearance.rhythmInFullscreen ? "is-on" : ""}`}
+                onClick={toggleRhythmFullscreen}
+                type="button"
+              >
+                <span className="settings-toggle-icon">
+                  <Icon name={appearance.rhythmInFullscreen ? "play" : "pause"} size={15} />
+                </span>
+                <span className="settings-toggle-copy">
+                  <strong>Rhythm in full screen</strong>
+                  <small>{appearance.rhythmInFullscreen ? "Visualizer shows behind full-screen playback." : "Full screen uses the artwork background."}</small>
+                </span>
+                <span className="settings-switch" aria-hidden="true">
+                  <span className="settings-switch-knob" />
+                </span>
+              </button>
             </article>
           </section>
         </div>

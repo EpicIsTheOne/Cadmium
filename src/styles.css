@@ -3067,6 +3067,11 @@ body { background:#02040b; }
 
 
 .fullscreen-view{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;opacity:0;visibility:hidden;transform:scale(.96);transition:opacity .26s ease,transform .26s ease,visibility 0s linear .26s;background:linear-gradient(180deg,rgba(20,18,38,.25),rgba(6,7,16,.92) 88%),var(--hero-art,none);background-size:cover;background-position:center 30%}
+/* When the live Rhythm visualizer is shown behind full-screen playback, dim the
+   static artwork background so the canvas reads clearly. */
+.fullscreen-view.has-rhythm{background:rgba(6,7,16,.92)}
+.fullscreen-rhythm{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block}
+.fullscreen-view.has-rhythm .fullscreen-inner{position:relative;z-index:1}
 .fullscreen-view::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(96,64,184,.4),rgba(228,75,189,.14) 55%,transparent 80%);mix-blend-mode:screen;pointer-events:none}
 .fullscreen-view.is-open{opacity:1;visibility:visible;transform:scale(1);transition:opacity .26s ease,transform .26s ease,visibility 0s}
 .fullscreen-close{position:absolute;top:20px;right:22px;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:50%;color:#d8d2e2;background:rgba(12,11,22,.6);z-index:2}

@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { DiscoveryData, GeneratedPlaylist, RadioSession } from "../domain/discovery";
 import type { NormalizedLibrary, TrackId } from "../domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { decodeBuffer, detectBpm } from "../playback/visualizer";
-import { PcmAudioAnalyzer } from "../playback/audio-analysis";
-import { sanitizeRhythmSettings, type RhythmSettings } from "../playback/rhythm-settings";
+import { sanitizeRhythmSettings, type RhythmSettings, loadVizSettings, saveVizSettings } from "../playback/rhythm-settings";
 import { paletteFromArt } from "../playback/rhythm-art-color";
-import { loadVizSettings, saveVizSettings } from "../playback/rhythm-settings";
-import { lerpColorHex } from "../playback/color-fade";
 import { VISUALIZER_DEFS, DEFAULT_VISUALIZER_ID, getVisualizerDef } from "../playback/visualizers";
-import type { Visualizer } from "../playback/visualizers/types";
+import { RhythmVisualizer } from "../components/RhythmVisualizer";
 import { LocalLibraryProvider, type AiStatus } from "../providers/local-library-provider";
 import { Icon } from "../components/Icon";
 import orbitArt from "../assets/cadmium-orbit.svg";
@@ -212,18 +209,6 @@ function Rhythm({ library, favoriteTrackIds, onToggleFavorite }: { library: Norm
   const playback = usePlaybackState();
   const currentTrackId = playback.currentTrackId ?? library.trackOrder[0];
   const currentTrack = currentTrackId ? library.tracksById[currentTrackId] : null;
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const vizRef = useRef<Visualizer | null>(null);
-  const analyzerRef = useRef<PcmAudioAnalyzer>(new PcmAudioAnalyzer());
-  const decodedRef = useRef<AudioBuffer | null>(null);
-  // Color cross-fade: the visualizer eases toward `targetColors` each frame
-  // instead of snapping when a new track's palette loads.
-  const targetColors = useRef<{ primary: string; secondary: string; background: string }>({
-    primary: "#36e0a8",
-    secondary: "#9a34d5",
-    background: "#0a0b14",
-  });
-  const vizColors = useRef<{ primary: string; secondary: string; background: string }>({ ...targetColors.current });
   const [bpm, setBpm] = useState<number | null>(null);
   const [analysisFailed, setAnalysisFailed] = useState(false);
   const [selectedViz, setSelectedViz] = useState<string>(() =>
@@ -257,65 +242,10 @@ function Rhythm({ library, favoriteTrackIds, onToggleFavorite }: { library: Norm
     return () => { active = false; };
   }, [settings.colorFromArt, artSrc]);
 
-  // Push live settings into the visualizer + persist them per-visualizer.
-  // Colors are eased toward (cross-faded) rather than snapped, so a track
-  // change glides into its palette instead of popping.
+  // Persist settings per-visualizer whenever they change.
   useEffect(() => {
     saveVizSettings(selectedViz, settings);
-    const effective: RhythmSettings = settings.colorFromArt && artPalette
-      ? { ...settings, colorPrimary: artPalette.primary, colorSecondary: artPalette.secondary, colorBackground: artPalette.background }
-      : settings;
-    targetColors.current = {
-      primary: effective.colorPrimary,
-      secondary: effective.colorSecondary,
-      background: effective.colorBackground,
-    };
-    vizRef.current?.setArtwork?.(artSrc);
-  }, [settings, artPalette, selectedViz, artSrc]);
-
-  // Mount the WebGL visualizer for the selected type. Rebuilds on switch.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const viz = def.create();
-    const ok = viz.start(canvas);
-    vizRef.current = ok ? viz : null;
-    // Seed the cross-fade state from the current effective palette so the
-    // first frame is correct, then ease toward new palettes each frame.
-    const seed: RhythmSettings = settings.colorFromArt && artPalette
-      ? { ...settings, colorPrimary: artPalette.primary, colorSecondary: artPalette.secondary, colorBackground: artPalette.background }
-      : settings;
-    targetColors.current = { primary: seed.colorPrimary, secondary: seed.colorSecondary, background: seed.colorBackground };
-    vizColors.current = { ...targetColors.current };
-    viz.applySettings({ ...settings });
-    viz.setArtwork?.(artSrc);
-    const resize = () => viz.resize(canvas.clientWidth, canvas.clientHeight);
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
-    resize();
-
-    // Color cross-fade: ~0.6s ease toward the target palette (60fps => 0.08/frame).
-    const FADE = 0.08;
-    let raf = 0;
-    const loop = () => {
-      const audio = playbackStore.getAudioElement();
-      const decoded = decodedRef.current;
-      const frame = audio && decoded
-        ? analyzerRef.current.update(decoded.getChannelData(0), decoded.sampleRate, audio.currentTime, settings.beatThreshold)
-        : { bass: 0, mid: 0, treble: 0, level: 0, beat: false, beatEnv: 0, spectrum: [] };
-      const tgt = targetColors.current;
-      const cur = vizColors.current;
-      cur.primary = lerpColorHex(cur.primary, tgt.primary, FADE);
-      cur.secondary = lerpColorHex(cur.secondary, tgt.secondary, FADE);
-      cur.background = lerpColorHex(cur.background, tgt.background, FADE);
-      const effective: RhythmSettings = { ...settings, colorPrimary: cur.primary, colorSecondary: cur.secondary, colorBackground: cur.background };
-      vizRef.current?.applySettings(effective);
-      vizRef.current?.update(frame, performance.now() / 1000);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); viz.dispose(); };
-  }, [def, settings, artPalette]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedViz, settings]);
 
   const switchViz = (id: string) => {
     setSelectedViz(id);
@@ -324,23 +254,16 @@ function Rhythm({ library, favoriteTrackIds, onToggleFavorite }: { library: Norm
     setSettings(loadVizSettings(id, next.defaultSettings as RhythmSettings));
   };
 
-  // Decode once per track: the same PCM powers real BPM detection and the
-  // time-aligned live visualizer.
+  // Decode once per track for the caption BPM readout.
   useEffect(() => {
     const src = currentTrack?.source.kind === "local-file" ? currentTrack.source.locator : null;
-    decodedRef.current = null;
-    analyzerRef.current = new PcmAudioAnalyzer();
     setBpm(null);
     setAnalysisFailed(false);
     if (!currentTrackId || !src) return;
     let active = true;
     decodeBuffer(src).then((buf) => {
       if (!active) return;
-      if (!buf) {
-        setAnalysisFailed(true);
-        return;
-      }
-      decodedRef.current = buf;
+      if (!buf) { setAnalysisFailed(true); return; }
       setBpm(detectBpm(buf));
     }).catch(() => { if (active) setAnalysisFailed(true); });
     return () => { active = false; };
@@ -377,7 +300,14 @@ function Rhythm({ library, favoriteTrackIds, onToggleFavorite }: { library: Norm
 
   return (
     <div className="rhythm-stage">
-      <canvas ref={canvasRef} className="rhythm-canvas" />
+      <RhythmVisualizer
+        className="rhythm-canvas"
+        currentTrackId={currentTrackId ?? null}
+        currentTrack={currentTrack}
+        library={library}
+        selectedViz={selectedViz}
+        settings={settings}
+      />
       <button
         type="button"
         className="rhythm-settings-btn"
