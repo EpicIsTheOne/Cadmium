@@ -31,16 +31,20 @@ void main(){
   float dist = max(d.x, d.y);
   float radius = 0.86;
   float mask = 1.0 - smoothstep(radius - 0.04, radius, dist);
-  vec3 base = uGlowB;
+  // While the album art is still loading (or absent), keep the plane dim and
+  // neutral so the art-derived palette color (often red first) does NOT flash
+  // as a bright square over the icon. Once the texture is present, the art and
+  // its beat-glow halo/rim show as intended.
+  vec3 base = mix(uGlowB * 0.3, uGlowB, uHasTex);
   if (uHasTex > 0.5) {
     vec3 tex = texture2D(uTex, vUv).rgb;
     base = mix(uGlowB, tex, 0.92);
   }
-  // beat glow halo just inside the edge
-  float halo = smoothstep(radius - 0.16, radius, dist) * (0.4 + uPulse);
+  // Beat glow halo + rim light only appear with the real artwork, so the
+  // art-color never flashes over a bare/loading icon.
+  float halo = smoothstep(radius - 0.16, radius, dist) * (0.4 + uPulse) * uHasTex;
   vec3 col = base + (uGlowA * halo) * (0.6 + uPulse);
-  // rim light
-  col += uGlowA * uEdge * smoothstep(radius - 0.02, radius, dist) * 0.5;
+  col += uGlowA * uEdge * smoothstep(radius - 0.02, radius, dist) * 0.5 * uHasTex;
   gl_FragColor = vec4(col, mask);
 }`;
 
