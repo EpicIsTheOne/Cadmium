@@ -156,12 +156,15 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
         lastApplied.current = { primary: cur.primary, secondary: cur.secondary, background: cur.background };
       }
       viz.update(frame, performance.now() / 1000);
-      // Surface a single music-energy value (0..1, bass-weighted) for the
-      // ambient shell: the sidebar / context seams glow with the beat.
-      // Only the ambient host writes it (stage/fullscreen don't tint the shell).
+      // Surface a single music-energy value (0..1) for the ambient shell: the
+      // sidebar / context seams glow with the beat. Use a fairly linear,
+      // level-heavy mix with a high floor so even moderate passages light up
+      // the seams clearly, and a slower decay so the glow breathes with the
+      // music instead of flickering. Only the ambient host writes it.
       if (ambient && typeof document !== "undefined") {
-        const energy = Math.min(1, 0.55 * frame.bass + 0.45 * frame.level);
-        energyRef.current = Math.max(energyRef.current * 0.85, energy);
+        const raw = Math.min(1, 0.35 * frame.bass + 0.5 * frame.level + 0.15 * frame.treble);
+        const energy = Math.min(1, 0.18 + raw * 0.95);
+        energyRef.current = Math.max(energyRef.current * 0.9, energy);
         const e = energyRef.current.toFixed(3);
         if (e !== lastEnergy.current) {
           document.documentElement.style.setProperty("--ambient-energy", e);

@@ -137,14 +137,20 @@ input:focus-visible {
 .app-shell.ambient-active .context-panel,
 .app-shell.ambient-active .topbar,
 .app-shell.ambient-active .bottom-player { background: rgba(4, 6, 12, 0.78); }
-/* Inner seams glow with the music while ambient is on. */
+/* Inner seams glow with the music while ambient is on. Stacked shadows so the
+   glow reads clearly: a tight bright core + a wide soft halo, both scaled by
+   --ambient-energy (bass-weighted, 0..1). */
 .app-shell.ambient-active .sidebar {
   border-right: 1px solid var(--accent-line);
-  box-shadow: 1px 0 18px calc(2px + var(--ambient-energy) * 22px) var(--accent-glow);
+  box-shadow:
+    1px 0 14px calc(3px + var(--ambient-energy) * 34px) var(--accent-glow),
+    1px 0 30px calc(2px + var(--ambient-energy) * 60px) var(--accent-glow);
 }
 .app-shell.ambient-active .context-panel {
   border-left: 1px solid var(--accent-line);
-  box-shadow: -1px 0 18px calc(2px + var(--ambient-energy) * 22px) var(--accent-glow);
+  box-shadow:
+    -1px 0 14px calc(3px + var(--ambient-energy) * 34px) var(--accent-glow),
+    -1px 0 30px calc(2px + var(--ambient-energy) * 60px) var(--accent-glow);
 }
 
 .app-shell.context-collapsed {
