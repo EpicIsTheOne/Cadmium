@@ -89,11 +89,11 @@ export class ParticleNebulaVisualizer implements Visualizer {
   private points: THREE.Points | null = null;
   private settings: BaseVizSettings | null = null;
 
-  start(canvas: HTMLCanvasElement): boolean {
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean {
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
       this.renderer.autoClear = false;
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, opts?.maxPixelRatio ?? 1.5));
       const bg = new THREE.Mesh(
         new THREE.PlaneGeometry(2, 2),
         new THREE.ShaderMaterial({ vertexShader: BG_VERT, fragmentShader: BG_FRAG, uniforms: this.bgUniforms, depthTest: false }),

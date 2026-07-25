@@ -10,10 +10,17 @@ const STORAGE_KEY = "cadmium.appearance";
 export interface AppearanceSettings {
   /** Render the live Rhythm visualizer behind the full-screen now-playing view. */
   rhythmInFullscreen: boolean;
+  /** Show the bottom playback bar (progress, transport) inside full-screen mode. */
+  fullscreenBottomBar: boolean;
+  /** When the Rhythm visualizer is on in full-screen, hide art/metadata/tabs for
+   *  an unobstructed "full rhythm" experience. */
+  fullscreenImmersive: boolean;
 }
 
 const DEFAULTS: AppearanceSettings = {
   rhythmInFullscreen: false,
+  fullscreenBottomBar: false,
+  fullscreenImmersive: false,
 };
 
 // In-memory cache + subscribers so toggles propagate to already-mounted views.
@@ -27,6 +34,8 @@ function read(): AppearanceSettings {
     const parsed = JSON.parse(raw) as Partial<AppearanceSettings>;
     return {
       rhythmInFullscreen: Boolean(parsed.rhythmInFullscreen ?? DEFAULTS.rhythmInFullscreen),
+      fullscreenBottomBar: Boolean(parsed.fullscreenBottomBar ?? DEFAULTS.fullscreenBottomBar),
+      fullscreenImmersive: Boolean(parsed.fullscreenImmersive ?? DEFAULTS.fullscreenImmersive),
     };
   } catch {
     return { ...DEFAULTS };

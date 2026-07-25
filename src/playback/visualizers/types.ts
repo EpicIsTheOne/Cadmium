@@ -7,7 +7,7 @@ import { hexToRgb } from "../rhythm-settings";
  */
 export interface Visualizer {
   /** Boot the renderer on the canvas. Returns false if WebGL is unavailable. */
-  start(canvas: HTMLCanvasElement): boolean;
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean;
   resize(width: number, height: number): void;
   update(frame: AudioFrame, timeSec: number): void;
   /** Live-update settings (unified base + optional per-type extras). */

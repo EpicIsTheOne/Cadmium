@@ -135,6 +135,16 @@ export class PcmAudioAnalyzer {
   private beatEnv = 0;
 
   update(pcm: Float32Array, sampleRate: number, currentTime: number, sensitivity = 1.42): AudioFrame {
+    return this.compute(pcm, sampleRate, currentTime, sensitivity, true);
+  }
+
+  /**
+   * Hot-path variant used by the live render loop. The log-spaced spectrum is
+   * computed from a 1024-pt FFT — a meaningful per-frame cost that NO current
+   * visualizer consumes. When `wantSpectrum` is false we skip it entirely,
+   * which removes the bulk of the per-frame CPU work and kills full-screen lag.
+   */
+  compute(pcm: Float32Array, sampleRate: number, currentTime: number, sensitivity = 1.42, wantSpectrum = false): AudioFrame {
     const windowSize = 4096;
     const center = Math.max(0, Math.floor(currentTime * sampleRate));
     const start = Math.max(0, Math.min(pcm.length - 1, center - Math.floor(windowSize / 2)));
@@ -179,6 +189,10 @@ export class PcmAudioAnalyzer {
     this.beatEnv = beat ? 1 : this.beatEnv * 0.9;
     this.bassHistory.push(bass);
     if (this.bassHistory.length > HISTORY) this.bassHistory.shift();
+
+    if (!wantSpectrum) {
+      return { bass, mid, treble, level, beat, beatEnv: this.beatEnv, spectrum: [] };
+    }
 
     // Spectrum (log-spaced bins) from a Hann-windowed FFT of a small PCM slice.
     const fftSize = 1024;

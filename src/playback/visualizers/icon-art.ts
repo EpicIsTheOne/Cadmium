@@ -62,8 +62,8 @@ export class IconArtVisualizer implements Visualizer {
   private pulse = 0;
   private bob = 0;
 
-  start(canvas: HTMLCanvasElement): boolean {
-    if (!this.nebula.start(canvas)) return false;
+  start(canvas: HTMLCanvasElement, opts?: { maxPixelRatio?: number }): boolean {
+    if (!this.nebula.start(canvas, opts)) return false;
     this.renderer = this.nebula.getRenderer();
     if (!this.renderer) return false;
     this.renderer.autoClear = false;

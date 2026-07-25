@@ -69,6 +69,14 @@ export function SettingsScreen({
     setAppearance({ rhythmInFullscreen: !appearance.rhythmInFullscreen });
   };
 
+  const toggleFsBottomBar = () => {
+    setAppearance({ fullscreenBottomBar: !appearance.fullscreenBottomBar });
+  };
+
+  const toggleFsImmersive = () => {
+    setAppearance({ fullscreenImmersive: !appearance.fullscreenImmersive });
+  };
+
   return (
     <div className="settings-screen" ref={settingsRef}>
       <header className="settings-header">
@@ -452,6 +460,42 @@ export function SettingsScreen({
                 <span className="settings-toggle-copy">
                   <strong>Rhythm in full screen</strong>
                   <small>{appearance.rhythmInFullscreen ? "Visualizer shows behind full-screen playback." : "Full screen uses the artwork background."}</small>
+                </span>
+                <span className="settings-switch" aria-hidden="true">
+                  <span className="settings-switch-knob" />
+                </span>
+              </button>
+
+              <button
+                aria-pressed={appearance.fullscreenBottomBar}
+                className={`settings-toggle ${appearance.fullscreenBottomBar ? "is-on" : ""}`}
+                onClick={toggleFsBottomBar}
+                type="button"
+              >
+                <span className="settings-toggle-icon">
+                  <Icon name={appearance.fullscreenBottomBar ? "play" : "pause"} size={15} />
+                </span>
+                <span className="settings-toggle-copy">
+                  <strong>Bottom bar in full screen</strong>
+                  <small>{appearance.fullscreenBottomBar ? "Transport + progress bar show over full-screen playback." : "Full screen hides the playback bar."}</small>
+                </span>
+                <span className="settings-switch" aria-hidden="true">
+                  <span className="settings-switch-knob" />
+                </span>
+              </button>
+
+              <button
+                aria-pressed={appearance.fullscreenImmersive}
+                className={`settings-toggle ${appearance.fullscreenImmersive ? "is-on" : ""}`}
+                onClick={toggleFsImmersive}
+                type="button"
+              >
+                <span className="settings-toggle-icon">
+                  <Icon name={appearance.fullscreenImmersive ? "play" : "pause"} size={15} />
+                </span>
+                <span className="settings-toggle-copy">
+                  <strong>Full rhythm mode</strong>
+                  <small>{appearance.fullscreenImmersive ? "Hides art, metadata, and tabs for an unobstructed visualizer." : "Full rhythm keeps the album art and info visible."}</small>
                 </span>
                 <span className="settings-switch" aria-hidden="true">
                   <span className="settings-switch-knob" />

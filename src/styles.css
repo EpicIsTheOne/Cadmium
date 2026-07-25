@@ -3072,6 +3072,21 @@ body { background:#02040b; }
 .fullscreen-view.has-rhythm{background:rgba(6,7,16,.92)}
 .fullscreen-rhythm{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block}
 .fullscreen-view.has-rhythm .fullscreen-inner{position:relative;z-index:1}
+/* Immersive "full rhythm" mode: drop the art/metadata/tabs so the visualizer
+   owns the whole screen; keep the close button + queue toggle reachable. */
+.fullscreen-view.is-immersive{justify-content:center}
+.fullscreen-view.is-immersive::before{opacity:.5}
+/* Optional playback bar pinned to the bottom of the full-screen view. */
+.fullscreen-bottom-bar{position:absolute;left:0;right:0;bottom:0;z-index:2;display:flex;align-items:center;gap:22px;padding:16px 26px;background:linear-gradient(0deg,rgba(4,5,12,.82),rgba(4,5,12,0));pointer-events:auto}
+.fullscreen-bottom-bar .fs-bb-transport{display:flex;align-items:center;gap:14px}
+.fullscreen-bottom-bar .fs-bb-transport .play-button{width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.16);color:#0a0b14;background:#36e0a8;display:inline-flex;align-items:center;justify-content:center}
+.fullscreen-bottom-bar .fs-bb-transport button:not(.play-button){color:#cfc8db;background:transparent}
+.fullscreen-bottom-bar .fs-bb-progress{flex:1;display:flex;align-items:center;gap:12px}
+.fullscreen-bottom-bar .fs-bb-progress time{font-size:12px;color:#bdb6c8;min-width:40px;text-align:center}
+.fullscreen-bottom-bar .fs-bb-progress input[type=range]{flex:1}
+.fullscreen-bottom-bar .fs-bb-volume{display:flex;align-items:center;gap:10px;color:#cfc8db}
+.fullscreen-bottom-bar input[type=range]{accent-color:#36e0a8}
+.fullscreen-view.has-bottombar .fullscreen-inner{padding-bottom:84px}
 .fullscreen-view::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(96,64,184,.4),rgba(228,75,189,.14) 55%,transparent 80%);mix-blend-mode:screen;pointer-events:none}
 .fullscreen-view.is-open{opacity:1;visibility:visible;transform:scale(1);transition:opacity .26s ease,transform .26s ease,visibility 0s}
 .fullscreen-close{position:absolute;top:20px;right:22px;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:50%;color:#d8d2e2;background:rgba(12,11,22,.6);z-index:2}

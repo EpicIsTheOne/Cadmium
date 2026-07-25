@@ -19,6 +19,9 @@ interface RhythmVisualizerProps {
   readonly selectedViz?: string;
   readonly settings?: RhythmSettings;
   readonly className?: string;
+  /** When mounted behind the full-screen now-playing view, cap the device
+   *  pixel ratio so the (much larger) canvas doesn't tank the frame rate. */
+  readonly fullscreen?: boolean;
 }
 
 /**
@@ -28,7 +31,7 @@ interface RhythmVisualizerProps {
  * per track and sampled at audio.currentTime against the shared <audio>
  * element, so native playback is never hijacked.
  */
-export function RhythmVisualizer({ currentTrackId, currentTrack, library, selectedViz, settings, className }: RhythmVisualizerProps) {
+export function RhythmVisualizer({ currentTrackId, currentTrack, library, selectedViz, settings, className, fullscreen }: RhythmVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const vizRef = useRef<Visualizer | null>(null);
   const analyzerRef = useRef<PcmAudioAnalyzer>(new PcmAudioAnalyzer());
@@ -39,6 +42,8 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
     background: "#0a0b14",
   });
   const vizColors = useRef<{ primary: string; secondary: string; background: string }>({ ...targetColors.current });
+  // Throttle applySettings: only re-push color uniforms when they actually move.
+  const lastApplied = useRef<{ primary: string; secondary: string; background: string } | null>(null);
 
   const resolvedViz = selectedViz ?? (typeof localStorage !== "undefined" ? localStorage.getItem("cadmium.viz.selected") ?? DEFAULT_VISUALIZER_ID : DEFAULT_VISUALIZER_ID);
   const def = getVisualizerDef(resolvedViz);
@@ -79,13 +84,18 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
     const canvas = canvasRef.current;
     if (!canvas) return;
     const viz = def.create();
-    const ok = viz.start(canvas);
+    const ok = viz.start(canvas, fullscreen ? { maxPixelRatio: 1.25 } : undefined);
     vizRef.current = ok ? viz : null;
     const seed: RhythmSettings = resolvedSettings.colorFromArt && artPalette
       ? { ...resolvedSettings, colorPrimary: artPalette.primary, colorSecondary: artPalette.secondary, colorBackground: artPalette.background }
       : resolvedSettings;
-    targetColors.current = { primary: seed.colorPrimary, secondary: seed.colorSecondary, background: seed.colorBackground };
+    targetColors.current = {
+      primary: seed.colorPrimary,
+      secondary: seed.colorSecondary,
+      background: seed.colorBackground,
+    };
     vizColors.current = { ...targetColors.current };
+    lastApplied.current = null;
     viz.applySettings({ ...resolvedSettings });
     viz.setArtwork?.(artSrc);
     const resize = () => viz.resize(canvas.clientWidth, canvas.clientHeight);
@@ -94,24 +104,33 @@ export function RhythmVisualizer({ currentTrackId, currentTrack, library, select
     resize();
 
     const FADE = 0.08;
-    let raf = 0;
+
     const loop = () => {
       const audio = playbackStore.getAudioElement();
       const decoded = decodedRef.current;
+      // Note: spectrum is intentionally skipped here (wantSpectrum=false) — no
+      // current visualizer consumes it, and the 1024-pt FFT was the main source
+      // of full-screen frame drops.
       const frame = audio && decoded
-        ? analyzerRef.current.update(decoded.getChannelData(0), decoded.sampleRate, audio.currentTime, resolvedSettings.beatThreshold)
+        ? analyzerRef.current.compute(decoded.getChannelData(0), decoded.sampleRate, audio.currentTime, resolvedSettings.beatThreshold, false)
         : { bass: 0, mid: 0, treble: 0, level: 0, beat: false, beatEnv: 0, spectrum: [] };
       const tgt = targetColors.current;
       const cur = vizColors.current;
       cur.primary = lerpColorHex(cur.primary, tgt.primary, FADE);
       cur.secondary = lerpColorHex(cur.secondary, tgt.secondary, FADE);
       cur.background = lerpColorHex(cur.background, tgt.background, FADE);
-      const effective: RhythmSettings = { ...resolvedSettings, colorPrimary: cur.primary, colorSecondary: cur.secondary, colorBackground: cur.background };
-      vizRef.current?.applySettings(effective);
+      // Only push color uniforms when they actually changed — applySettings
+      // rebuilds an object and runs several hex conversions each call.
+      const last = lastApplied.current;
+      if (!last || last.primary !== cur.primary || last.secondary !== cur.secondary || last.background !== cur.background) {
+        const effective: RhythmSettings = { ...resolvedSettings, colorPrimary: cur.primary, colorSecondary: cur.secondary, colorBackground: cur.background };
+        vizRef.current?.applySettings(effective);
+        lastApplied.current = { primary: cur.primary, secondary: cur.secondary, background: cur.background };
+      }
       vizRef.current?.update(frame, performance.now() / 1000);
       raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
+    let raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); viz.dispose(); };
   }, [def, resolvedSettings, artPalette, artSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
