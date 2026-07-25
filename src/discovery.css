@@ -155,7 +155,7 @@
 .nebula-tip { position:absolute; z-index:6; transform:translate(-50%,calc(-100% - 16px)); display:grid; gap:3px; min-width:140px; max-width:240px; padding:9px 12px; border:1px solid rgba(160,140,220,.25); border-radius:10px; background:rgba(8,9,20,.94); box-shadow:0 14px 40px rgba(0,0,0,.5); pointer-events:none; }
 .nebula-tip strong { color:#f4f2f7; font-size:13px; font-weight:620; }
 .nebula-tip small { color:#a39db0; font-size:10px; }
-.nebula-tip span { color:var(--shell-green,#36e0a8); font-size:10px; }
+.nebula-tip span { color:var(--accent,#36e0a8); font-size:10px; }
 
 .nebula-legend { align-self:center; display:grid; gap:14px; padding:20px; border:1px solid rgba(118,70,196,.16); border-radius:16px; background:#080a14; }
 .legend-title { color:#f1eef5; font-size:13px; font-weight:640; }
