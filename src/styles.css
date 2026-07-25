@@ -3261,18 +3261,8 @@ body { background:#02040b; }
 .playlist-edit:hover { background: rgba(54, 224, 168, 0.22); color: #fff; }
 
 .collection-edit-button {
-  display: inline-grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-left: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
   color: #d8d3e6;
-  cursor: pointer;
-  vertical-align: middle;
-  transition: background 0.15s ease, color 0.15s ease;
+  border-color: rgba(255, 255, 255, 0.12);
 }
 .collection-edit-button:hover { background: rgba(54, 224, 168, 0.18); color: #fff; border-color: rgba(54, 224, 168, 0.4); }
 

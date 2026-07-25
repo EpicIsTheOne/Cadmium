@@ -157,17 +157,6 @@ export function CollectionDetailScreen({
         <div className="collection-hero-copy">
           <span className="eyebrow">{eyebrow}</span>
           <h1 className="collection-title">{title}</h1>
-          {isPlaylist || kind === "album" ? (
-            <button
-              aria-label="Edit collection"
-              className="collection-edit-button"
-              onClick={openEdit}
-              title="Edit"
-              type="button"
-            >
-              <Icon name="pencil" size={15} />
-            </button>
-          ) : null}
           {description ? <p className="collection-description">{description}</p> : null}
           <div className="collection-meta">
             <span className="collection-meta-artist">{artistName}</span>
@@ -208,6 +197,17 @@ export function CollectionDetailScreen({
         >
           <Icon name="plus" size={20} />
         </button>
+        {isPlaylist || kind === "album" ? (
+          <button
+            aria-label="Edit collection"
+            className="icon-button collection-edit-button"
+            onClick={openEdit}
+            title="Edit"
+            type="button"
+          >
+            <Icon name="pencil" size={18} />
+          </button>
+        ) : null}
         <div className="collection-actionbar-spacer" />
       </div>
 
