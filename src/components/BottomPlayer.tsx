@@ -180,6 +180,13 @@ export function BottomPlayer({ library, favoriteTrackIds, onToggleFavorite, prov
       ) : null}
       {fsBottomBar ? (
         <div className="fullscreen-bottom-bar">
+          <div className="fs-bb-now">
+            {track?.artwork?.src ? <img alt="" aria-hidden="true" className="fs-bb-now-art" src={track.artwork.src} /> : null}
+            <div className="fs-bb-now-copy">
+              <strong>{track?.title || "Nothing playing"}</strong>
+              <span>{artist || (track ? "Unknown artist" : "Choose a local track")}</span>
+            </div>
+          </div>
           <div className="fs-bb-transport">
             <button aria-label="Shuffle" className={state.shuffle ? "is-active" : ""} onClick={() => playbackStore.setShuffle(!state.shuffle)} type="button"><Icon name="mixes" size={16} /></button>
             <button aria-label="Previous" disabled={!track} onClick={() => void playbackStore.previous()} type="button"><Icon name="skip-back" size={18} /></button>

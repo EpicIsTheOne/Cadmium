@@ -2887,7 +2887,7 @@ body { background:#02040b; }
 .sidebar-profile>div { display:grid; gap:4px; min-width:0; }
 .sidebar-profile strong { color:#eeeaf4; font-size:11px; }
 .sidebar-profile strong span { padding:2px 4px; border-radius:3px; color:#aaa5bd; font-size:7px; background:#181a28; }
-.sidebar-profile small { color:#f0bd35; font-size:9px; }
+.sidebar-profile small { color:var(--accent-2); font-size:9px; }
 .profile-settings { color:#aaa7b8; background:transparent; }
 
 .workspace { background:#03050d; }
@@ -3080,6 +3080,11 @@ body { background:#02040b; }
 .fullscreen-bottom-bar button{background:transparent;color:#cfc8db;border:0}
 .fullscreen-bottom-bar .play-button{background:var(--accent);color:#0a0b14}
 .fullscreen-bottom-bar .fs-bb-progress{flex:1;display:flex;align-items:center;gap:12px}
+.fullscreen-bottom-bar .fs-bb-now{display:flex;align-items:center;gap:11px;min-width:0;max-width:300px}
+.fullscreen-bottom-bar .fs-bb-now-art{width:42px;height:42px;border-radius:6px;object-fit:cover;flex:none;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.fullscreen-bottom-bar .fs-bb-now-copy{display:grid;gap:2px;min-width:0}
+.fullscreen-bottom-bar .fs-bb-now-copy strong{font-size:13px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fullscreen-bottom-bar .fs-bb-now-copy span{font-size:9px;color:#9b93a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fullscreen-bottom-bar .fs-bb-progress time{font-size:12px;color:#bdb6c8;min-width:40px;text-align:center}
 .fullscreen-bottom-bar .fs-bb-progress input[type=range]{flex:1}
 .fullscreen-bottom-bar .fs-bb-volume{display:flex;align-items:center;gap:10px;color:#cfc8db}
