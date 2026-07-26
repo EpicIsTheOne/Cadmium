@@ -11,20 +11,6 @@ import "./shell-density.css";
 
 restoreTheme();
 
-const runtime = createRuntimeForCurrentPlatform();
-
-let root: React.ReactElement;
-
-if (runtime.platform === "desktop") {
-  const AppDesktop = (await import("./desktop/AppDesktop")).default;
-  root = <AppDesktop runtime={runtime} />;
-} else if (runtime.platform === "android") {
-  const AppMobile = (await import("./mobile/AppMobile")).default;
-  root = <AppMobile runtime={runtime} />;
-} else {
-  root = <BrowserUnavailable />;
-}
-
 function BrowserUnavailable() {
   return (
     <main
@@ -49,4 +35,26 @@ function BrowserUnavailable() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<StrictMode>{root}</StrictMode>);
+async function bootstrap(): Promise<void> {
+  const runtime = createRuntimeForCurrentPlatform();
+
+  let root: React.ReactElement;
+
+  if (runtime.platform === "desktop") {
+    const AppDesktop = (await import("./desktop/AppDesktop")).default;
+    root = <AppDesktop runtime={runtime} />;
+  } else if (runtime.platform === "android") {
+    const AppMobile = (await import("./mobile/AppMobile")).default;
+    root = <AppMobile runtime={runtime} />;
+  } else {
+    root = <BrowserUnavailable />;
+  }
+
+  const container = document.getElementById("root");
+  if (!container) {
+    throw new Error("missing #root mount node");
+  }
+  createRoot(container).render(<StrictMode>{root}</StrictMode>);
+}
+
+void bootstrap();
