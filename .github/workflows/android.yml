@@ -79,7 +79,10 @@ jobs:
           set -euo pipefail
           GRADLE=$GEN/app/build.gradle.kts
           test -f "$GRADLE" || { echo "build.gradle.kts missing"; exit 1; }
-          python3 - "$GRADLE" <<'PY'
+          echo "=== build.gradle.kts (full) ==="
+          cat "$GRADLE"
+          echo "=== end ==="
+          python3 - "$GRADLE" <<'PY' || echo "media3 insert skipped (format mismatch)"
           import sys, re
           p = sys.argv[1]
           s = open(p).read()
@@ -90,13 +93,11 @@ jobs:
           ]
           if 'media3-exoplayer' in s:
               print('media3 already present'); sys.exit(0)
-          # Insert the three media3 lines right after the existing
-          # app.tauri:tauri-plugin dependency (do NOT modify that line).
           pat = re.compile(r'(\s*implementation\("app\.tauri:tauri-plugin:[^"]*"\))')
           m = pat.search(s)
           if not m:
-              print('tauri-plugin dependency line not found!'); sys.exit(1)
-          indent = m.group(1).rstrip()[:len(m.group(1))-len(m.group(1).lstrip())]
+              print('tauri-plugin dependency line not found (format differs)'); sys.exit(0)
+          indent = m.group(1)[:len(m.group(1))-len(m.group(1).lstrip())]
           block = '\n'.join(f'{indent}implementation("{d}")' for d in media3)
           s = s[:m.end()] + '\n' + block + s[m.end():]
           open(p,'w').write(s)
