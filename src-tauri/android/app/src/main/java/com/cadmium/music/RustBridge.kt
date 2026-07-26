@@ -40,7 +40,7 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
     fun pause(invoke: Invoke) { startService().pause(); invoke.resolve(JSObject()) }
 
     @Command
-    fun toggle(invoke: Invoke) { invoke.resolve(JSObject()) }
+    fun toggle(invoke: Invoke) { startService().play(); invoke.resolve(JSObject()) }
 
     @Command
     fun next(invoke: Invoke) { startService().next(); invoke.resolve(JSObject()) }
@@ -50,21 +50,24 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun seek(invoke: Invoke) {
-        val position = invoke.getDouble("positionMs") ?: 0.0
+        val args = invoke.getArgs()
+        val position = args.getDouble("positionMs") ?: 0.0
         startService().seek(position.toLong())
         invoke.resolve(JSObject())
     }
 
     @Command
     fun setVolume(invoke: Invoke) {
-        val v = (invoke.getDouble("volume") ?: 1.0).toFloat()
+        val args = invoke.getArgs()
+        val v = (args.getDouble("volume") ?: 1.0).toFloat()
         startService().setVolume(v)
         invoke.resolve(JSObject())
     }
 
     @Command
     fun setRepeatMode(invoke: Invoke) {
-        val mode = invoke.getString("mode")
+        val args = invoke.getArgs()
+        val mode = args.getString("mode")
         val rm = when (mode) {
             "one" -> androidx.media3.common.Player.REPEAT_MODE_ONE
             "all" -> androidx.media3.common.Player.REPEAT_MODE_ALL
@@ -76,14 +79,15 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun setShuffle(invoke: Invoke) {
-        val on = invoke.getBoolean("enabled") ?: false
+        val args = invoke.getArgs()
+        val on = args.getBoolean("enabled") ?: false
         startService().setShuffle(on)
         invoke.resolve(JSObject())
     }
 
     private fun startService(): PlaybackService {
-        val intent = Intent(context, PlaybackService::class.java)
-        context.startForegroundService(intent)
+        val intent = Intent(activity, PlaybackService::class.java)
+        activity.startForegroundService(intent)
         // In a real build the service instance is obtained via a bound connection;
         // this scaffold documents the intent handoff.
         return PlaybackService()

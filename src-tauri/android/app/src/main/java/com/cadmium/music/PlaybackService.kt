@@ -2,6 +2,7 @@ package com.cadmium.music
 
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -40,8 +41,8 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     override fun onCreate() {
         super.onCreate()
         val attrs = AudioAttributes.Builder()
-            .setContentType(androidx.media3.common.AudioAttributes.CONTENT_TYPE_MUSIC)
-            .setUsage(androidx.media3.common.AudioAttributes.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setUsage(C.USAGE_MEDIA)
             .build()
         player = ExoPlayer.Builder(this)
             .setAudioAttributes(attrs, true)
@@ -72,11 +73,11 @@ class PlaybackService : MediaSessionService(), Player.Listener {
     fun setRepeat(mode: Int) { player?.repeatMode = mode; pushState() }
     fun setShuffle(on: Boolean) { player?.shuffleModeEnabled = on; pushState() }
 
-    override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
+    override fun onPlaybackStateChanged(playbackState: Int) {
         pushState()
     }
 
-    override fun onPositionDiscontinuity(reason: Int) {
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
         pushState()
     }
 
