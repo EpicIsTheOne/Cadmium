@@ -20,10 +20,6 @@ import app.tauri.plugin.Invoke
 @TauriPlugin
 class RustBridge : Plugin() {
 
-    override fun load(invoke: Invoke) {
-        // No-op load; commands are registered below.
-    }
-
     @Command
     fun setQueue(invoke: Invoke) {
         val items = invoke.parseArgs(MediaItemList::class.java)

@@ -83,7 +83,10 @@ jobs:
           echo "ACT=$ACT"
           test -f "$ACT" || { echo "MainActivity.kt missing"; exit 1; }
           if ! grep -q "MediaStorePlugin" "$ACT"; then
-            sed -i 's#super.onCreate(savedInstanceState)#import com.cadmium.music.MediaStorePlugin\nimport com.cadmium.music.RustBridge\nsuper.onCreate(savedInstanceState)\n        add(MediaStorePlugin())\n        add(RustBridge())#' "$ACT"
+            # Add plugin imports after the tauri import line.
+            sed -i 's#import app.tauri.TauriActivity#import app.tauri.TauriActivity\nimport com.cadmium.music.MediaStorePlugin\nimport com.cadmium.music.RustBridge#' "$ACT"
+            # Register the plugins right after super.onCreate(savedInstanceState).
+            sed -i 's#super.onCreate(savedInstanceState)#super.onCreate(savedInstanceState)\n        add(MediaStorePlugin())\n        add(RustBridge())#' "$ACT"
           fi
           echo "--- MainActivity head ---"
           head -20 "$ACT"

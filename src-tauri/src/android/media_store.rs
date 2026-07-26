@@ -64,7 +64,7 @@ pub fn reconcile(
 /// candidates. On other targets this is unreachable at runtime (the command
 /// handler rejects non-Android platforms before calling it).
 #[cfg(target_os = "android")]
-pub fn query_media_store(_app: &tauri::AppHandle) -> Result<Vec<AndroidMediaCandidateDto>, String> {
+pub fn query_media_store(_app: &tauri::AppHandle) -> Result<ScanSummaryDto, String> {
     // The Kotlin `MediaStorePlugin` performs the real query and returns the
     // serialized candidates over the Tauri bridge; Rust forwards them to
     // `reconcile`. This function is the documented integration point and is

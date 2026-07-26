@@ -81,23 +81,34 @@ fn allow_library_assets(app: &AppHandle, library: &NormalizedLibraryDto) -> Resu
 
 #[tauri::command]
 pub fn select_watched_folder(app: AppHandle) -> Result<Option<String>, String> {
-    let selected = app
-        .dialog()
-        .file()
-        .set_title("Choose a music folder")
-        .blocking_pick_folder();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let path = selected
-        .into_path()
-        .map_err(|error| format!("selected path is not local: {error}"))?;
-    let canonical = std::fs::canonicalize(&path)
-        .map_err(|error| format!("selected folder is unavailable: {error}"))?;
-    if !canonical.is_dir() {
-        return Err("selected path is not a folder".to_owned());
+    // Desktop-only: the folder picker dialog does not exist on Android (the
+    // mobile app ingests via MediaStore instead). Keep the command registered
+    // on every target so the invoke handler stays uniform.
+    #[cfg(desktop)]
+    {
+        let selected = app
+            .dialog()
+            .file()
+            .set_title("Choose a music folder")
+            .blocking_pick_folder();
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let path = selected
+            .into_path()
+            .map_err(|error| format!("selected path is not local: {error}"))?;
+        let canonical = std::fs::canonicalize(&path)
+            .map_err(|error| format!("selected folder is unavailable: {error}"))?;
+        if !canonical.is_dir() {
+            return Err("selected path is not a folder".to_owned());
+        }
+        Ok(Some(canonical.to_string_lossy().into_owned()))
     }
-    Ok(Some(canonical.to_string_lossy().into_owned()))
+    #[cfg(not(desktop))]
+    {
+        let _ = app;
+        Err("folder picking is not available on Android; use MediaStore ingestion".to_owned())
+    }
 }
 
 #[tauri::command]
