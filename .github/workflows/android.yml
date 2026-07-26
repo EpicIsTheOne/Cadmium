@@ -69,9 +69,26 @@ jobs:
           echo "DST=$DST"
           mkdir -p "$DST/java/com/cadmium/music"
           cp -r "$SRC/java/com/cadmium/music/." "$DST/java/com/cadmium/music/"
-          cp "$SRC/AndroidManifest.xml" "$DST/AndroidManifest.xml"
+          # NOTE: we do NOT overwrite AndroidManifest.xml — Tauri's generated
+          # manifest is required for the `rust` plugin to emit TauriActivity.
+          # Permissions/service attrs are patched into the generated manifest below.
           mkdir -p "$DST/res/values"
           cp -r "$SRC/res/." "$DST/res/"
+
+      - name: Patch generated AndroidManifest (optional)
+        if: ${{ inputs.custom_android == 'true' }}
+        run: |
+          set -euo pipefail
+          MAN=$GEN/app/src/main/AndroidManifest.xml
+          test -f "$MAN" || { echo "manifest missing"; exit 1; }
+          # Add READ_MEDIA_AUDIO if absent.
+          if ! grep -q "READ_MEDIA_AUDIO" "$MAN"; then
+            sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />#' "$MAN"
+          fi
+          # Tag the app's main service (if any) as media playback foreground service.
+          sed -i 's#android:name=".MainActivity"#android:name=".MainActivity" android:exported="true"#' "$MAN"
+          echo "--- manifest head ---"
+          head -25 "$MAN"
 
       - name: Wire Media3 deps into build.gradle.kts (optional)
         if: ${{ inputs.custom_android == 'true' }}
