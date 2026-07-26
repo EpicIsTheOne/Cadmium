@@ -11,6 +11,7 @@ permissions:
 env:
   NDK_VERSION: "25.2.9519653"
   ANDROID_API: "34"
+  GEN: src-tauri/gen/android/cadmium
 
 jobs:
   android:
@@ -55,26 +56,35 @@ jobs:
         run: |
           set -euo pipefail
           SRC=src-tauri/android/app/src/main
-          DST=src-tauri/gen/android/app/src/main
+          DST=$GEN/app/src/main
+          echo "DST=$DST"
+          ls -la "$DST" || true
           mkdir -p "$DST/java/com/cadmium/music"
           cp -r "$SRC/java/com/cadmium/music/." "$DST/java/com/cadmium/music/"
           cp "$SRC/AndroidManifest.xml" "$DST/AndroidManifest.xml"
+          echo "Kotlin integrated."
 
       - name: Wire Media3 + plugin deps into build.gradle.kts
         run: |
           set -euo pipefail
-          GRADLE=src-tauri/gen/android/app/build.gradle.kts
-          grep -q "media3-exoplayer" "$GRADLE" || \
+          GRADLE=$GEN/app/build.gradle.kts
+          echo "GRADLE=$GRADLE"
+          test -f "$GRADLE" || { echo "build.gradle.kts missing"; exit 1; }
+          if ! grep -q "media3-exoplayer" "$GRADLE"; then
             sed -i 's#^\(\s*\)implementation("app.tauri:tauri-plugin:.*")#\1implementation("app.tauri:tauri-plugin:2.0.0")\n\1implementation("androidx.media3:media3-exoplayer:1.3.1")\n\1implementation("androidx.media3:media3-session:1.3.1")\n\1implementation("androidx.media3:media3-common:1.3.1")#' "$GRADLE"
-          echo "--- patched build.gradle.kts deps ---"
-          grep -n "media3\|tauri-plugin" "$GRADLE"
+          fi
+          echo "--- patched deps ---"
+          grep -n "media3\|tauri-plugin" "$GRADLE" || true
 
       - name: Register Cadmium plugins in MainActivity
         run: |
           set -euo pipefail
-          ACT=src-tauri/gen/android/app/src/main/java/com/cadmium/music/MainActivity.kt
-          grep -q "MediaStorePlugin" "$ACT" || \
+          ACT=$GEN/app/src/main/java/com/cadmium/music/MainActivity.kt
+          echo "ACT=$ACT"
+          test -f "$ACT" || { echo "MainActivity.kt missing"; exit 1; }
+          if ! grep -q "MediaStorePlugin" "$ACT"; then
             sed -i 's#super.onCreate(savedInstanceState)#import com.cadmium.music.MediaStorePlugin\nimport com.cadmium.music.RustBridge\nsuper.onCreate(savedInstanceState)\n        add(MediaStorePlugin())\n        add(RustBridge())#' "$ACT"
+          fi
           echo "--- MainActivity head ---"
           head -20 "$ACT"
 
@@ -86,6 +96,6 @@ jobs:
         with:
           name: cadmium-android-debug
           path: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            src-tauri/target/*/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/cadmium/app/build/outputs/apk/**/*.apk
+            src-tauri/target/**/build/outputs/apk/**/*.apk
           if-no-files-found: warn
