@@ -97,19 +97,20 @@ jobs:
           ]
           if 'media3-exoplayer' in s:
               print('media3 already present'); sys.exit(0)
-          # Tauri v2 generated build.gradle.kts has no explicit tauri-plugin
-          # dependency line (the runtime is bundled via the `rust` plugin).
-          # Insert the Media3 deps right after the `dependencies {` block opener.
-          marker = 'dependencies {'
-          i = s.find(marker)
-          if i == -1:
-              print('dependencies block not found'); sys.exit(0)
-          j = s.find('\n', i) + 1
+          # The app-level `dependencies { }` block lives INSIDE `rust { }`, so we
+          # must not inject there (it would corrupt the rust plugin config and
+          # stop TauriActivity from being generated). Instead add a separate
+          # module-level dependencies block just before the tauri apply().
+          apply_marker = 'apply(from = "tauri.build.gradle.kts")'
+          ai = s.find(apply_marker)
+          if ai == -1:
+              print('apply line not found'); sys.exit(0)
           indent = '    '
-          block = '\n'.join(f'{indent}implementation("{d}")' for d in media3)
-          s = s[:j] + block + '\n' + s[j:]
+          lines = '\n'.join(f'{indent}implementation("{d}")' for d in media3)
+          block = f'dependencies {{\n{lines}\n}}\n\n'
+          s = s[:ai] + block + s[ai:]
           open(p, 'w').write(s)
-          print('media3 deps inserted')
+          print('media3 deps inserted as module-level block')
           PY
           echo "--- deps now ---"
           grep -n "media3\|tauri-plugin" "$GRADLE" || true
