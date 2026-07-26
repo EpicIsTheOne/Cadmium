@@ -85,10 +85,8 @@ jobs:
           if ! grep -q "READ_MEDIA_AUDIO" "$MAN"; then
             sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />#' "$MAN"
           fi
-          # Tag the app's main service (if any) as media playback foreground service.
-          sed -i 's#android:name=".MainActivity"#android:name=".MainActivity" android:exported="true"#' "$MAN"
-          echo "--- manifest head ---"
-          head -25 "$MAN"
+          echo "--- manifest permissions ---"
+          grep "uses-permission" "$MAN" | head -5
 
       - name: Wire Media3 deps into build.gradle.kts (optional)
         if: ${{ inputs.custom_android == 'true' }}
