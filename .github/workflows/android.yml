@@ -58,9 +58,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf src-tauri/target
-          rm -rf $GEN/app/src/main/java/com/cadmium/music/generated
           rm -rf $GEN/app/build
-          echo "Cleaned Rust target + generated + build dirs"
+          echo "Cleaned Rust target + build dirs only; preserved generated/ (contains TauriActivity)"
 
       - name: Init Android project
         run: npm run android:init
