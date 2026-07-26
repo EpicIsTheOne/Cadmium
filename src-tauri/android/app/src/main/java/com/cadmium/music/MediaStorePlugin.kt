@@ -1,5 +1,6 @@
 package com.cadmium.music
 
+import android.app.Activity
 import android.content.ContentUris
 import android.database.Cursor
 import android.net.Uri
@@ -19,7 +20,7 @@ import kotlinx.coroutines.withContext
  * MANAGE_EXTERNAL_STORAGE, and we never delete or mutate source audio.
  */
 @TauriPlugin
-class MediaStorePlugin : Plugin() {
+class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
     private val collection: Uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
 
     @Command
@@ -48,13 +49,12 @@ class MediaStorePlugin : Plugin() {
             MediaStore.Audio.Media.GENRE,
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.SIZE,
-            MediaStore.Audio.Media.DATE_MODIFIED,
-            MediaStore.Audio.Media.ALBUM_ID
+            MediaStore.Audio.Media.DATE_MODIFIED
         )
         val list = mutableListOf<Map<String, Any?>>()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} = ?"
         val selectionArgs = arrayOf("1")
-        val cursor: Cursor? = context.contentResolver.query(
+        val cursor: Cursor? = activity.contentResolver.query(
             collection, projection, selection, selectionArgs, null
         )
         cursor?.use {

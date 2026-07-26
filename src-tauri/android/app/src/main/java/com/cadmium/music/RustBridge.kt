@@ -1,5 +1,6 @@
 package com.cadmium.music
 
+import android.app.Activity
 import android.content.Intent
 import androidx.media3.common.MediaItem
 import app.tauri.annotation.Command
@@ -18,7 +19,7 @@ import app.tauri.plugin.Invoke
  * channel consumed by the mobile engine (android_accept_playback_state).
  */
 @TauriPlugin
-class RustBridge : Plugin() {
+class RustBridge(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun setQueue(invoke: Invoke) {
