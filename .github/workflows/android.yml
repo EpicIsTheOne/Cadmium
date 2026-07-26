@@ -2,6 +2,11 @@ name: Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      custom_android:
+        description: "Also integrate the custom Cadmium Media3/RustBridge Kotlin (experimental)"
+        required: false
+        default: "false"
   push:
     branches: [main]
 
@@ -52,7 +57,11 @@ jobs:
       - name: Init Android project
         run: npm run android:init
 
-      - name: Integrate custom Cadmium Kotlin
+      # Custom Cadmium Kotlin (Media3 service + RustBridge). Experimental: the
+      # Tauri-plugin / Media3 API wiring is still being iterated on. Flip
+      # CUSTOM_ANDROID=1 (workflow_dispatch input) to attempt the full build.
+      - name: Integrate custom Cadmium Kotlin (optional)
+        if: ${{ inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           SRC=src-tauri/android/app/src/main
@@ -61,16 +70,14 @@ jobs:
           mkdir -p "$DST/java/com/cadmium/music"
           cp -r "$SRC/java/com/cadmium/music/." "$DST/java/com/cadmium/music/"
           cp "$SRC/AndroidManifest.xml" "$DST/AndroidManifest.xml"
-          # Provide the Theme.Cadmium style the manifest references.
           mkdir -p "$DST/res/values"
           cp -r "$SRC/res/." "$DST/res/"
-          echo "Kotlin + resources integrated."
 
-      - name: Wire Media3 + plugin deps into build.gradle.kts
+      - name: Wire Media3 + plugin deps into build.gradle.kts (optional)
+        if: ${{ inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           GRADLE=$GEN/app/build.gradle.kts
-          echo "GRADLE=$GRADLE"
           test -f "$GRADLE" || { echo "build.gradle.kts missing"; exit 1; }
           if ! grep -q "media3-exoplayer" "$GRADLE"; then
             sed -i 's#^\(\s*\)implementation("app.tauri:tauri-plugin:.*")#\1implementation("app.tauri:tauri-plugin:2.0.0")\n\1implementation("androidx.media3:media3-exoplayer:1.3.1")\n\1implementation("androidx.media3:media3-session:1.3.1")\n\1implementation("androidx.media3:media3-common:1.3.1")#' "$GRADLE"
@@ -78,19 +85,16 @@ jobs:
           echo "--- patched deps ---"
           grep -n "media3\|tauri-plugin" "$GRADLE" || true
 
-      - name: Register Cadmium plugins in MainActivity
+      - name: Register Cadmium plugins in MainActivity (optional)
+        if: ${{ inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           ACT=$GEN/app/src/main/java/com/cadmium/music/MainActivity.kt
-          echo "ACT=$ACT"
           test -f "$ACT" || { echo "MainActivity.kt missing"; exit 1; }
           if ! grep -q "MediaStorePlugin" "$ACT"; then
-            # Add plugin imports after the tauri import line.
             sed -i 's#import app.tauri.TauriActivity#import app.tauri.TauriActivity\nimport com.cadmium.music.MediaStorePlugin\nimport com.cadmium.music.RustBridge#' "$ACT"
-            # Register the plugins right after super.onCreate(savedInstanceState).
             sed -i 's#super.onCreate(savedInstanceState)#super.onCreate(savedInstanceState)\n        add(MediaStorePlugin())\n        add(RustBridge())#' "$ACT"
           fi
-          echo "--- MainActivity head ---"
           head -20 "$ACT"
 
       - name: Build debug APK
@@ -101,6 +105,6 @@ jobs:
         with:
           name: cadmium-android-debug
           path: |
-            src-tauri/gen/android/cadmium/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
             src-tauri/target/**/build/outputs/apk/**/*.apk
           if-no-files-found: warn
