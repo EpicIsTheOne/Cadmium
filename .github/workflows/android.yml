@@ -54,6 +54,14 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Clean stale artifacts (fixes TauriActivity stale-cache bug tauri#13983)
+        run: |
+          set -euo pipefail
+          rm -rf src-tauri/target
+          rm -rf $GEN/app/src/main/java/com/cadmium/music/generated
+          rm -rf $GEN/app/build
+          echo "Cleaned Rust target + generated + build dirs"
+
       - name: Init Android project
         run: npm run android:init
 
@@ -129,18 +137,6 @@ jobs:
           PY
           echo "--- media3 grep ---"
           grep -n "media3" "$GRADLE" || true
-
-      # NOTE: Tauri v2 auto-registers @TauriPlugin classes at runtime; no
-      # MainActivity change is needed. The earlier `add(Plugin())` approach was
-      # wrong for v2 and has been removed.
-
-      - name: Clean stale target + generated (avoids TauriActivity stale cache)
-        if: ${{ inputs.custom_android == 'true' }}
-        run: |
-          set -euo pipefail
-          rm -rf src-tauri/target
-          rm -rf $GEN
-          echo "Cleaned target/ and gen/ for fresh TauriActivity generation"
 
       - name: Build debug APK
         run: npm run android:build:debug
