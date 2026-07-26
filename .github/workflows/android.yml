@@ -88,20 +88,20 @@ jobs:
           echo "--- manifest permissions ---"
           grep "uses-permission" "$MAN" | head -5
 
-      - name: Wire Media3 deps into build.gradle.kts (optional)
+      - name: Wire Media3 deps (optional)
         if: ${{ inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
-          GRADLE=$GEN/app/build.gradle.kts
-          test -f "$GRADLE" || { echo "build.gradle.kts missing"; exit 1; }
-          echo "=== build.gradle.kts (full) ==="
-          cat "$GRADLE"
-          echo "=== end ==="
-          echo "--- diagnostics ---"
-          grep -n "dependencies {" "$GRADLE" || true
-          grep -n "apply(from" "$GRADLE" || true
-          grep -n "rust {" "$GRADLE" || true
-          python3 - "$GRADLE" <<'PY' || echo "media3 insert skipped (format mismatch)"
+          TAURI_GRADLE=$GEN/app/tauri.build.gradle.kts
+          if [ -f "$TAURI_GRADLE" ]; then
+            GRADLE="$TAURI_GRADLE"
+            echo "Targeting tauri.build.gradle.kts"
+          else
+            GRADLE=$GEN/app/build.gradle.kts
+            echo "tauri.build.gradle.kts not found, using build.gradle.kts"
+          fi
+          test -f "$GRADLE" || { echo "build file missing"; exit 0; }
+          python3 - "$GRADLE" <<'PY' || echo "media3 insert skip"
           import sys
           p = sys.argv[1]
           s = open(p).read()
@@ -112,23 +112,23 @@ jobs:
           ]
           if 'media3-exoplayer' in s:
               print('media3 already present'); sys.exit(0)
-          # The app-level `dependencies { }` block lives INSIDE `rust { }`, so we
-          # must not inject there (it would corrupt the rust plugin config and
-          # stop TauriActivity from being generated). Instead add a separate
-          # module-level dependencies block just before the tauri apply().
           apply_marker = 'apply(from = "tauri.build.gradle.kts")'
           ai = s.find(apply_marker)
-          if ai == -1:
-              print('apply line not found'); sys.exit(0)
-          indent = '    '
+          if ai != -1:
+              # Inside rust {} block — insert before apply() so the
+              # dependencies scope is correct.
+              indent = '    '
+          else:
+              indent = '    '
+              ai = len(s)
           lines = '\n'.join(f'{indent}implementation("{d}")' for d in media3)
-          block = f'dependencies {{\n{lines}\n}}\n\n'
+          block = f'\ndependencies {{\n{lines}\n}}\n'
           s = s[:ai] + block + s[ai:]
           open(p, 'w').write(s)
-          print('media3 deps inserted as module-level block')
+          print('media3 deps inserted')
           PY
-          echo "--- deps now ---"
-          grep -n "media3\|tauri-plugin" "$GRADLE" || true
+          echo "--- media3 grep ---"
+          grep -n "media3" "$GRADLE" || true
 
       # NOTE: Tauri v2 auto-registers @TauriPlugin classes at runtime; no
       # MainActivity change is needed. The earlier `add(Plugin())` approach was
