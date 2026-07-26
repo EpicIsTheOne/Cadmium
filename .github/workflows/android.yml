@@ -82,6 +82,10 @@ jobs:
           echo "=== build.gradle.kts (full) ==="
           cat "$GRADLE"
           echo "=== end ==="
+          echo "--- diagnostics ---"
+          grep -n "dependencies {" "$GRADLE" || true
+          grep -n "apply(from" "$GRADLE" || true
+          grep -n "rust {" "$GRADLE" || true
           python3 - "$GRADLE" <<'PY' || echo "media3 insert skipped (format mismatch)"
           import sys
           p = sys.argv[1]
