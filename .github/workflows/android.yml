@@ -137,9 +137,10 @@ jobs:
       - name: Clean stale target + generated (avoids TauriActivity stale cache)
         if: ${{ inputs.custom_android == 'true' }}
         run: |
+          set -euo pipefail
           rm -rf src-tauri/target
-          rm -rf $GEN/app/src/main/java/com/cadmium/music/generated
-          rm -rf $GEN/app/build
+          rm -rf $GEN
+          echo "Cleaned target/ and gen/ for fresh TauriActivity generation"
 
       - name: Build debug APK
         run: npm run android:build:debug
