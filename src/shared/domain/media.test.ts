@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyLibrary, emptySearchResults } from "./media";
-import { EmptyMusicProvider } from "../providers/music-provider";
+import { EmptyMusicProvider } from "../../providers/music-provider";
 
 describe("empty provider contract", () => {
   it("returns a normalized graph with no invented media", async () => {

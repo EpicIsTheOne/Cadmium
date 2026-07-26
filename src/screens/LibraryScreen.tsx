@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { AlbumId, MusicProvider, NormalizedLibrary, PlaylistId, TrackId } from "../domain/media";
+import type { AlbumId, MusicProvider, NormalizedLibrary, PlaylistId, TrackId } from "../shared/domain/media";
 import { playbackStore } from "../playback/playback-store";
 import type { WatchedFolder } from "../providers/local-library-provider";
 import type { CollectionKind } from "../components/Sidebar";
-import { EmptyState } from "../components/EmptyState";
-import { Icon } from "../components/Icon";
+import { EmptyState } from "../shared/components/EmptyState";
+import { Icon } from "../shared/components/Icon";
 import { TrackMenu } from "../components/TrackMenu";
 import { CollectionEditModal, type CollectionEditMode, type CollectionEditValues } from "../components/CollectionEditModal";
 import orbitArt from "../assets/cadmium-orbit.svg";

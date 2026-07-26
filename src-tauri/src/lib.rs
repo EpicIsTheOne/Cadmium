@@ -1,4 +1,5 @@
 mod ai;
+mod android;
 mod commands;
 mod dj;
 mod library;
@@ -77,7 +78,20 @@ pub fn run() {
             commands::save_dj_recovery,
             commands::synthesize_dj_narration,
             commands::record_listening_event,
-            commands::end_dj_session
+            commands::end_dj_session,
+            android::commands::android_media_store_scan,
+            android::commands::android_reconcile_media,
+            android::commands::android_set_queue,
+            android::commands::android_play,
+            android::commands::android_pause,
+            android::commands::android_toggle,
+            android::commands::android_next,
+            android::commands::android_previous,
+            android::commands::android_seek,
+            android::commands::android_set_volume,
+            android::commands::android_set_repeat_mode,
+            android::commands::android_set_shuffle,
+            android::commands::android_accept_playback_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running Cadmium");

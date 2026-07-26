@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import orbitArt from "../assets/cadmium-orbit.svg";
-import type { MusicProvider, NormalizedLibrary, TrackId } from "../domain/media";
+import type { MusicProvider, NormalizedLibrary, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { getAppearance, subscribeAppearance } from "../playback/appearance";
 import { RhythmVisualizer } from "./RhythmVisualizer";
-import { Icon } from "./Icon";
+import { Icon } from "../shared/components/Icon";
 import { TrackMenu } from "./TrackMenu";
 
 interface BottomPlayerProps {

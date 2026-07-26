@@ -1,4 +1,4 @@
-import type { TrackId } from "./media";
+import type { TrackId } from "../shared/domain/media";
 
 export interface Story {
   readonly id: string;

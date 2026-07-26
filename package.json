@@ -13,6 +13,11 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build:debug": "tauri android build --debug",
+    "android:build:release": "tauri android build",
+    "android:test": "echo 'Android module tests run as cargo tests (shared Rust logic) + tsc for the mobile UI; device/emulator verification requires ANDROID_HOME + NDK.' && npm run typecheck",
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
@@ -23,6 +28,8 @@
     "three": "^0.160.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
+    "@types/node": "^20.19.43",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@types/three": "^0.160.0",
@@ -30,7 +37,6 @@
     "jsdom": "^26.0.0",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
-    "vitest": "^3.1.2",
-    "@tauri-apps/cli": "^2.5.0"
+    "vitest": "^3.1.2"
   }
 }

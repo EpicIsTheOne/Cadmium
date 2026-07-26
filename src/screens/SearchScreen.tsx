@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { MusicProvider, NormalizedLibrary, SearchResults, TrackId } from "../domain/media";
+import type { MusicProvider, NormalizedLibrary, SearchResults, TrackId } from "../shared/domain/media";
 import type { CollectionKind } from "../components/Sidebar";
-import { Icon } from "../components/Icon";
+import { Icon } from "../shared/components/Icon";
 import { TrackMenu } from "../components/TrackMenu";
 import { playbackStore } from "../playback/playback-store";
 import orbitArt from "../assets/cadmium-orbit.svg";

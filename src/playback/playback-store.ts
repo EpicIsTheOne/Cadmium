@@ -4,8 +4,8 @@ import type {
   QueueItem,
   Track,
   TrackId,
-} from "../domain/media";
-import { nextQueueIndex, previousQueueIndex, type RepeatMode } from "./queue";
+} from "../shared/domain/media";
+import { nextQueueIndex, previousQueueIndex, type RepeatMode } from "../shared/playback/queue";
 import type { QueueSnapshot } from "../domain/dj";
 
 export interface PlaybackStoreState {

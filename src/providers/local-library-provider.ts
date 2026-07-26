@@ -12,8 +12,8 @@ import type {
   SearchResults,
   Track,
   TrackId,
-} from "../domain/media";
-import { emptyLibrary } from "../domain/media";
+} from "../shared/domain/media";
+import { emptyLibrary } from "../shared/domain/media";
 import type {
   DiscoveryData,
   GeneratedPlaylist,

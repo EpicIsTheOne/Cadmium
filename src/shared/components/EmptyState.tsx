@@ -6,7 +6,7 @@ interface EmptyStateProps {
   body: string;
   actionLabel?: string;
   onAction?: () => void;
-  icon?: "folder" | "search" | "library" | "spark" | "refresh" | "mood" | "mixes" | "rhythm";
+  icon?: "folder" | "search" | "library" | "spark" | "refresh" | "mood" | "mixes" | "rhythm" | "music";
   compact?: boolean;
 }
 

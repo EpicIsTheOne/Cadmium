@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { DiscoveryData, GeneratedPlaylist, RadioSession } from "../domain/discovery";
-import type { NormalizedLibrary, TrackId } from "../domain/media";
+import type { NormalizedLibrary, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { decodeBuffer, detectBpm } from "../playback/visualizer";
 import { sanitizeRhythmSettings, type RhythmSettings, loadVizSettings, saveVizSettings } from "../playback/rhythm-settings";
@@ -8,7 +8,7 @@ import { paletteFromArt } from "../playback/rhythm-art-color";
 import { VISUALIZER_DEFS, DEFAULT_VISUALIZER_ID, getVisualizerDef } from "../playback/visualizers";
 import { RhythmVisualizer } from "../components/RhythmVisualizer";
 import { LocalLibraryProvider, type AiStatus } from "../providers/local-library-provider";
-import { Icon } from "../components/Icon";
+import { Icon } from "../shared/components/Icon";
 import orbitArt from "../assets/cadmium-orbit.svg";
 import { MoodNebula } from "./MoodNebula";
 

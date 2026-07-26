@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { DiscoveryData, MoodPoint } from "../domain/discovery";
-import type { NormalizedLibrary, TrackId } from "../domain/media";
+import type { NormalizedLibrary, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import orbitArt from "../assets/cadmium-orbit.svg";
 

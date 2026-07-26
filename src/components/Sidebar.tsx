@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import orbitArt from "../assets/cadmium-orbit.svg";
-import type { AlbumId, ArtistId, MusicProvider, NormalizedLibrary, PlaylistId, ProviderDescriptor } from "../domain/media";
-import { Icon, type IconName } from "./Icon";
+import type { AlbumId, ArtistId, MusicProvider, NormalizedLibrary, PlaylistId, ProviderDescriptor } from "../shared/domain/media";
+import { Icon, type IconName } from "../shared/components/Icon";
 import { CollectionEditModal, type CollectionEditMode, type CollectionEditValues } from "./CollectionEditModal";
 
 export type ScreenId = "home" | "search" | "stories" | "lore" | "mood" | "ai" | "mixes" | "radio" | "rhythm" | "library" | "settings" | "collection";

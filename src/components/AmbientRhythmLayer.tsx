@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { NormalizedLibrary, Track } from "../domain/media";
+import type { NormalizedLibrary, Track } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { getAppearance, subscribeAppearance } from "../playback/appearance";
 import { RhythmVisualizer } from "./RhythmVisualizer";

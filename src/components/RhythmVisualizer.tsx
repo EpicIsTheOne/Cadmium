@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { NormalizedLibrary, Track, TrackId } from "../domain/media";
+import type { NormalizedLibrary, Track, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { decodeBuffer } from "../playback/visualizer";
 import { PcmAudioAnalyzer } from "../playback/audio-analysis";

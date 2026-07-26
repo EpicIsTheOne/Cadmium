@@ -1,10 +1,10 @@
 import heroArt from "../assets/cadmium-hero-night.png";
 import gridArt from "../assets/cadmium-grid.svg";
 import orbitArt from "../assets/cadmium-orbit.svg";
-import { Icon } from "../components/Icon";
+import { Icon } from "../shared/components/Icon";
 import type { ScreenId } from "../components/Sidebar";
 import type { CollectionKind } from "../components/Sidebar";
-import type { NormalizedLibrary, Track } from "../domain/media";
+import type { NormalizedLibrary, Track } from "../shared/domain/media";
 import { playbackStore } from "../playback/playback-store";
 
 interface Props {

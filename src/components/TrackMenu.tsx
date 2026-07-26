@@ -6,8 +6,8 @@ import type {
   Playlist,
   PlaylistId,
   TrackId,
-} from "../domain/media";
-import { Icon } from "./Icon";
+} from "../shared/domain/media";
+import { Icon } from "../shared/components/Icon";
 
 interface TrackMenuProps {
   trackId: TrackId;

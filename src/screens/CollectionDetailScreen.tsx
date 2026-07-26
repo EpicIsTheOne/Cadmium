@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import type { AlbumId, ArtistId, MusicProvider, NormalizedLibrary, PlaylistId, Track, TrackId } from "../domain/media";
+import type { AlbumId, ArtistId, MusicProvider, NormalizedLibrary, PlaylistId, Track, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
-import { Icon } from "../components/Icon";
+import { Icon } from "../shared/components/Icon";
 import { TrackMenu } from "../components/TrackMenu";
 import { CollectionEditModal, type CollectionEditMode, type CollectionEditValues } from "../components/CollectionEditModal";
 import gridArt from "../assets/cadmium-grid.svg";

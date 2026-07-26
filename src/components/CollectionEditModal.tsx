@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import type { AlbumId, ArtistId, MusicProvider, PlaylistId } from "../domain/media";
-import { Icon } from "./Icon";
+import type { AlbumId, ArtistId, MusicProvider, PlaylistId } from "../shared/domain/media";
+import { Icon } from "../shared/components/Icon";
 
 export type CollectionEditMode =
   | "create-playlist"

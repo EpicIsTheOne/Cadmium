@@ -1,6 +1,6 @@
 import orbitArt from "../assets/cadmium-orbit.svg";
 import type { DjSet } from "../domain/dj";
-import type { NormalizedLibrary, TrackId } from "../domain/media";
+import type { NormalizedLibrary, TrackId } from "../shared/domain/media";
 import { playbackStore } from "../playback/playback-store";
 
 export type DjTrackState = "current" | "up-next" | "played";

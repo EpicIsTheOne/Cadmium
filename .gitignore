@@ -5,7 +5,14 @@ src-tauri/gen
 *.tsbuildinfo
 .env
 .env.*
-!.env.example
+
+# Android build artifacts (Kotlin source under src-tauri/gen/android/app/src is tracked
+# only when committed; generated gradle/NDK outputs are not).
+src-tauri/gen/android/.gradle
+src-tauri/gen/android/**/build/
+src-tauri/gen/android/local.properties
+*.apk
+*.aab
 
 # Local agent / scratch state (not project source)
 .hermes/

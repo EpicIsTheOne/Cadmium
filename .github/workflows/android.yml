@@ -1,0 +1,82 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "src/screens/**"
+      - "src/desktop/**"
+      - "src/components/**"
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust + Android (SDK/NDK/JDK)
+        uses: tauri-apps/ci@v1
+        with:
+          args: android
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Init Android project
+        run: npm run android:init
+
+      - name: Integrate custom Cadmium Kotlin
+        run: |
+          set -euo pipefail
+          SRC=src-tauri/android/app/src/main
+          DST=src-tauri/gen/android/app/src/main
+          # Kotlin sources
+          mkdir -p "$DST/java/com/cadmium/music"
+          cp -r "$SRC/java/com/cadmium/music/." "$DST/java/com/cadmium/music/"
+          # Manifest (overwrites the generated one with our permission set)
+          cp "$SRC/AndroidManifest.xml" "$DST/AndroidManifest.xml"
+
+      - name: Wire Media3 + plugin deps into build.gradle.kts
+        run: |
+          set -euo pipefail
+          GRADLE=src-tauri/gen/android/app/build.gradle.kts
+          # Add Media3 + Tauri plugin annotation deps if not present.
+          grep -q "media3-exoplayer" "$GRADLE" || \
+            sed -i 's#^\(\s*\)implementation("app.tauri:tauri-plugin:.*")#\1implementation("app.tauri:tauri-plugin:2.0.0")\n\1implementation("androidx.media3:media3-exoplayer:1.3.1")\n\1implementation("androidx.media3:media3-session:1.3.1")\n\1implementation("androidx.media3:media3-common:1.3.1")#' "$GRADLE"
+          echo "--- patched build.gradle.kts deps ---"
+          grep -n "media3\|tauri-plugin" "$GRADLE"
+
+      - name: Register Cadmium plugins in MainActivity
+        run: |
+          set -euo pipefail
+          ACT=src-tauri/gen/android/app/src/main/java/com/cadmium/music/MainActivity.kt
+          # Ensure imports + plugin registration exist.
+          grep -q "MediaStorePlugin" "$ACT" || \
+            sed -i 's#super.onCreate(savedInstanceState)#import com.cadmium.music.MediaStorePlugin\nimport com.cadmium.music.RustBridge\nsuper.onCreate(savedInstanceState)\n        add(MediaStorePlugin())\n        add(RustBridge())#' "$ACT"
+          echo "--- MainActivity head ---"
+          head -20 "$ACT"
+
+      - name: Build debug APK
+        run: npm run android:build:debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadmium-android-debug
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/target/*/build/outputs/apk/**/*.apk
+          if-no-files-found: warn

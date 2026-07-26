@@ -1,9 +1,9 @@
 import { useState } from "react";
-import type { MusicProvider, NormalizedLibrary, QueueItem, TrackId } from "../domain/media";
+import type { MusicProvider, NormalizedLibrary, QueueItem, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import type { ScreenId } from "./Sidebar";
 import type { CollectionKind } from "./Sidebar";
-import { Icon } from "./Icon";
+import { Icon } from "../shared/components/Icon";
 import { TrackMenu } from "./TrackMenu";
 import orbitArt from "../assets/cadmium-orbit.svg";
 

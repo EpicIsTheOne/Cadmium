@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import type { MusicProvider } from "../domain/media";
+import type { MusicProvider } from "../shared/domain/media";
 import { usePlaybackState, playbackStore } from "../playback/playback-store";
 import type { WatchedFolder } from "../providers/local-library-provider";
-import { Icon } from "../components/Icon";
+import { Icon } from "../shared/components/Icon";
 import { THEMES, applyTheme, getTheme } from "../theme";
 import { getAppearance, setAppearance, subscribeAppearance } from "../playback/appearance";
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { NormalizedLibrary, TrackId } from "../domain/media";
+import type { NormalizedLibrary, TrackId } from "../shared/domain/media";
 import { equalPowerCrossfade, PlaybackStore } from "./playback-store";
 
 const trackId = "track-1" as TrackId;

@@ -12,7 +12,7 @@ import {
   type TrackId,
   emptyLibrary,
   emptySearchResults,
-} from "../domain/media";
+} from "../shared/domain/media";
 
 const EMPTY_DESCRIPTOR = {
   id: "empty-provider",

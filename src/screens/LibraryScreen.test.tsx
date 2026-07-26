@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LibraryScreen } from "./LibraryScreen";
-import { emptyLibrary } from "../domain/media";
+import { emptyLibrary } from "../shared/domain/media";
 
 function makeProps(overrides: Partial<Parameters<typeof LibraryScreen>[0]> = {}) {
   const library = emptyLibrary();

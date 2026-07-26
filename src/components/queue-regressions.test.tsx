@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { DjSet } from "../domain/dj";
-import type { ArtistId, NormalizedLibrary, QueueItem, TrackId } from "../domain/media";
+import type { ArtistId, NormalizedLibrary, QueueItem, TrackId } from "../shared/domain/media";
 import { ContextQueue } from "./ContextPanel";
 import { buildDjSetQueueRows } from "./DjSetQueue";
 import { classifyDjFailure, shouldRequestDjRefill } from "./DjPanel";

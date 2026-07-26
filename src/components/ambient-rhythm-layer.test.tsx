@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ambientLayerActive } from "../components/AmbientRhythmLayer";
-import type { Track } from "../domain/media";
+import type { Track } from "../shared/domain/media";
 
 const localTrack = (over: Partial<Track> = {}): Track => ({
   id: "t1",

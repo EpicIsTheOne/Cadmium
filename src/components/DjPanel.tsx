@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DjNarration, DjRecovery, DjSet, DjStatus, FishVoice, QueueSnapshot, WhisperStatus } from "../domain/dj";
-import type { NormalizedLibrary, TrackId } from "../domain/media";
+import type { NormalizedLibrary, TrackId } from "../shared/domain/media";
 import { playbackStore, usePlaybackState } from "../playback/playback-store";
 import { LocalLibraryProvider } from "../providers/local-library-provider";
-import { Icon } from "./Icon";
+import { Icon } from "../shared/components/Icon";
 import { DjSetQueue } from "./DjSetQueue";
 
 type DjPhase = "idle" | "generating" | "speaking" | "ending" | "listening" | "transcribing" | "downloading" | "error";

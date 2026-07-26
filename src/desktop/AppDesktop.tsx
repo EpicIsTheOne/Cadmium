@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getAppearance, subscribeAppearance } from "./playback/appearance";
-import { Icon } from "./components/Icon";
-import { BottomPlayer } from "./components/BottomPlayer";
-import { AmbientRhythmLayer } from "./components/AmbientRhythmLayer";
-import { ContextPanel } from "./components/ContextPanel";
-import { DjPanel } from "./components/DjPanel";
-import { Sidebar, type ScreenId } from "./components/Sidebar";
-import { EmptyState } from "./components/EmptyState";
-import { countLibraryEntities } from "./providers/music-provider";
+import { getAppearance, subscribeAppearance } from "../playback/appearance";
+import { Icon } from "../shared/components/Icon";
+import { BottomPlayer } from "../components/BottomPlayer";
+import { AmbientRhythmLayer } from "../components/AmbientRhythmLayer";
+import { ContextPanel } from "../components/ContextPanel";
+import { DjPanel } from "../components/DjPanel";
+import { Sidebar, type ScreenId } from "../components/Sidebar";
+import { EmptyState } from "../shared/components/EmptyState";
+import { countLibraryEntities } from "../providers/music-provider";
 import {
   createMusicProvider,
   LocalLibraryProvider,
   type WatchedFolder,
-} from "./providers/local-library-provider";
-import type { AlbumId, NormalizedLibrary, TrackId } from "./domain/media";
-import { playbackStore } from "./playback/playback-store";
-import { HomeScreen } from "./screens/HomeScreen";
-import { LibraryScreen } from "./screens/LibraryScreen";
-import { DiscoveryScreen } from "./screens/DiscoveryScreen";
-import { SearchScreen } from "./screens/SearchScreen";
-import { SearchBox } from "./components/SearchBox";
-import { SettingsScreen } from "./screens/SettingsScreen";
-import { CollectionDetailScreen, type CollectionKind } from "./screens/CollectionDetailScreen";
+} from "../providers/local-library-provider";
+import type { AlbumId, NormalizedLibrary, TrackId } from "../shared/domain/media";
+import { playbackStore } from "../playback/playback-store";
+import { HomeScreen } from "../screens/HomeScreen";
+import { LibraryScreen } from "../screens/LibraryScreen";
+import { DiscoveryScreen } from "../screens/DiscoveryScreen";
+import { SearchScreen } from "../screens/SearchScreen";
+import { SearchBox } from "../components/SearchBox";
+import { SettingsScreen } from "../screens/SettingsScreen";
+import { CollectionDetailScreen, type CollectionKind } from "../screens/CollectionDetailScreen";
 
 const screenMeta: Record<ScreenId, { eyebrow: string; title: string }> = {
   home: { eyebrow: "Workspace / overview", title: "Home" },
@@ -60,7 +60,7 @@ const emptyLibrary: NormalizedLibrary = {
   recentTrackIds: [],
 };
 
-export default function App() {
+export default function App(_props: { runtime?: import("../platform/runtime").CadmiumRuntime }) {
   const provider = useMemo(() => createMusicProvider(), []);
   const [activeScreen, setActiveScreen] = useState<ScreenId>("home");
   const [library, setLibrary] = useState<NormalizedLibrary | null>(null);

@@ -1,4 +1,4 @@
-import type { QueueItem, TrackId } from "./media";
+import type { QueueItem, TrackId } from "../shared/domain/media";
 
 export interface FishVoice {
   readonly id: string;
