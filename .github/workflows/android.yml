@@ -58,11 +58,13 @@ jobs:
           SRC=src-tauri/android/app/src/main
           DST=$GEN/app/src/main
           echo "DST=$DST"
-          ls -la "$DST" || true
           mkdir -p "$DST/java/com/cadmium/music"
           cp -r "$SRC/java/com/cadmium/music/." "$DST/java/com/cadmium/music/"
           cp "$SRC/AndroidManifest.xml" "$DST/AndroidManifest.xml"
-          echo "Kotlin integrated."
+          # Provide the Theme.Cadmium style the manifest references.
+          mkdir -p "$DST/res/values"
+          cp -r "$SRC/res/." "$DST/res/"
+          echo "Kotlin + resources integrated."
 
       - name: Wire Media3 + plugin deps into build.gradle.kts
         run: |
