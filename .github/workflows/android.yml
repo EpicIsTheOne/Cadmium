@@ -11,7 +11,7 @@ permissions:
 env:
   NDK_VERSION: "25.2.9519653"
   ANDROID_API: "34"
-  GEN: src-tauri/gen/android/cadmium
+  GEN: src-tauri/gen/android
 
 jobs:
   android:
@@ -51,16 +51,6 @@ jobs:
 
       - name: Init Android project
         run: npm run android:init
-
-      - name: Inspect generated Android layout
-        run: |
-          set -euo pipefail
-          echo "=== find gen/android (depth 4) ==="
-          find src-tauri/gen/android -maxdepth 4 -type f 2>/dev/null | head -60 || true
-          echo "=== build.gradle.kts locations ==="
-          find src-tauri/gen/android -name "build.gradle.kts" 2>/dev/null || true
-          echo "=== MainActivity locations ==="
-          find src-tauri/gen/android -name "MainActivity.kt" 2>/dev/null || true
 
       - name: Integrate custom Cadmium Kotlin
         run: |
