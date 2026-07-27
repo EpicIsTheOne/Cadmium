@@ -45,6 +45,24 @@ interface BackendTrack {
   format: string;
 }
 
+/** Shape returned by the Kotlin MediaStorePlugin.scan command. */
+interface AndroidMediaCandidate {
+  volumeName: string;
+  mediaId: string;
+  contentUri: string;
+  title: string;
+  artist: string;
+  album: string;
+  albumId: string;
+  durationMs: number;
+  trackNumber: number;
+  year: number;
+  genre?: string | null;
+  format: string;
+  byteLength: number;
+  modifiedAtMs: number;
+}
+
 interface BackendAlbum {
   id: string;
   title: string;
@@ -274,9 +292,13 @@ export class AndroidLibraryProvider implements MusicProvider {
 
   /** Android-specific: trigger a MediaStore rescan and return the new library. */
   async rescan(): Promise<NormalizedLibrary> {
-    // The Kotlin MediaStorePlugin queries MediaStore off-thread and calls back
-    // into Rust android_reconcile_media, which writes the shared library.
-    await invoke("plugin:mediastore|scan");
+    // The Kotlin MediaStorePlugin queries MediaStore off-thread and returns the
+    // normalized candidate list; we hand it to Rust android_reconcile_media,
+    // which writes the shared library, then read it back.
+    const response = await invoke<{ candidates: AndroidMediaCandidate[] }>(
+      "plugin:mediastore|scan",
+    );
+    await invoke("android_reconcile_media", { candidates: response.candidates });
     return this.getLibrary();
   }
 }

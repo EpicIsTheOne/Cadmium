@@ -6,13 +6,15 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.webkit.WebView
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
-import android.webkit.WebView
 
 /**
  * Exposes the Android audio-permission flow to the React renderer.
@@ -21,20 +23,29 @@ import android.webkit.WebView
  * MANAGE_EXTERNAL_STORAGE. MediaStore access on Android 13+ uses the scoped
  * READ_MEDIA_AUDIO permission; on older versions we fall back to the broad
  * READ_EXTERNAL_STORAGE. The bridge injects a small `window.__CADMIUM_ANDROID__`
- * global that the renderer calls, and this plugin answers it.
+ * global that the renderer calls, and this plugin answers it. The runtime
+ * permission prompt uses the AndroidX Activity Result API (registerForActivityResult),
+ * which requires the host activity to be a ComponentActivity (TauriActivity is).
  */
 @TauriPlugin
 class PermissionBridge(private val activity: Activity) : Plugin(activity) {
-    companion object {
-        const val REQUEST_CODE = 0xCAD1
-    }
-
+    private var launcher: androidx.activity.result.ActivityResultLauncher<String>? = null
     private var pendingInvoke: Invoke? = null
 
     override fun load(webView: WebView) {
+        if (activity is ComponentActivity) {
+            launcher = activity.registerForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                val invoke = pendingInvoke ?: return@registerForActivityResult
+                pendingInvoke = null
+                val permission = audioPermission()
+                val shouldShow = activity.shouldShowRequestPermissionRationale(permission)
+                invoke.resolve(permissionResult(granted = isGranted, shouldShowRationale = shouldShow))
+            }
+        }
         // Inject the bridge global so the renderer can call native permission
-        // APIs without importing a Tauri plugin module. The functions simply
-        // forward to this plugin's commands over the normal invoke channel.
+        // APIs without importing a Tauri plugin module.
         val script = """
             (function() {
               if (window.__CADMIUM_ANDROID__) return;
@@ -60,14 +71,13 @@ class PermissionBridge(private val activity: Activity) : Plugin(activity) {
             ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED -> {
                 invoke.resolve(permissionResult(granted = true, shouldShowRationale = false))
             }
-            // If we should show a rationale the user can still be prompted.
-            activity.shouldShowRequestPermissionRationale(permission) -> {
+            launcher != null -> {
                 pendingInvoke = invoke
-                activity.requestPermissions(arrayOf(permission), REQUEST_CODE)
+                launcher!!.launch(permission)
             }
             else -> {
-                pendingInvoke = invoke
-                activity.requestPermissions(arrayOf(permission), REQUEST_CODE)
+                // Host is not a ComponentActivity; report denied rather than crash.
+                invoke.resolve(permissionResult(granted = false, shouldShowRationale = false))
             }
         }
     }
@@ -79,20 +89,6 @@ class PermissionBridge(private val activity: Activity) : Plugin(activity) {
         }
         activity.startActivity(intent)
         invoke.resolve(JSObject())
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        if (requestCode != REQUEST_CODE) return
-        val invoke = pendingInvoke ?: return
-        pendingInvoke = null
-        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-        val shouldShow = permissions.isNotEmpty() &&
-            activity.shouldShowRequestPermissionRationale(permissions[0])
-        invoke.resolve(permissionResult(granted = granted, shouldShowRationale = shouldShow))
     }
 
     private fun audioPermission(): String {

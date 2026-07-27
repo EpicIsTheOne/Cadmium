@@ -5,7 +5,6 @@ import android.content.ContentUris
 import android.database.Cursor
 import android.net.Uri
 import android.provider.MediaStore
-import app.tauri.Tauri
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.JSObject
@@ -19,9 +18,10 @@ import kotlinx.coroutines.withContext
 
 /**
  * Queries MediaStore.Audio.Media OFF the main thread and returns normalized
- * candidates to Rust. Rust never touches Android content resolvers; this plugin
- * is the only place that reads MediaStore. Read-only: we never request
- * MANAGE_EXTERNAL_STORAGE, and we never delete or mutate source audio.
+ * candidates to the Rust side, which writes them via android_reconcile_media.
+ * Rust never touches Android content resolvers; this plugin is the only place
+ * that reads MediaStore. Read-only: we never request MANAGE_EXTERNAL_STORAGE,
+ * and we never delete or mutate source audio.
  */
 @TauriPlugin
 class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
@@ -30,21 +30,13 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun scan(invoke: Invoke) {
-        // Run the query off the main thread, then hand the candidate list to the
-        // Rust side via android_reconcile_media (which writes the shared library).
+        // Run the query off the main thread, then hand the candidate list back to
+        // JS. The renderer invokes android_reconcile_media (a Rust command) with it.
         scope.launch {
             val candidates = withContext(Dispatchers.IO) { query() }
-            val payload = JSObject()
-            payload.put("candidates", candidates.toTypedArray())
-            try {
-                Tauri.invoke("android_reconcile_media", payload) { _: JSObject ->
-                    val result = JSObject()
-                    result.put("count", candidates.size)
-                    invoke.resolve(result)
-                }
-            } catch (error: Throwable) {
-                invoke.reject(error.message ?: "MediaStore reconcile failed")
-            }
+            val result = JSObject()
+            result.put("candidates", candidates.toTypedArray())
+            invoke.resolve(result)
         }
     }
 
