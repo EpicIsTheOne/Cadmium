@@ -137,7 +137,24 @@ jobs:
           find "$HOME/.gradle/caches" -type f -iname '*tauri*' -print | head -50 || true
 
       - name: Build debug APK
-        run: npm run android:build:debug
+        run: |
+          set +e
+          npm run android:build:debug
+          BUILD_RC=$?
+          set -e
+          if [ "${{ inputs.custom_android }}" = "true" ] && [ "$BUILD_RC" -ne 0 ]; then
+            echo "--- POSTMORTEM: generated Tauri files ---"
+            find "$GEN" -type f \( -iname '*tauri*' -o -name '*.aar' \) -print | sort | head -100
+            echo "--- POSTMORTEM: tauri.settings.gradle ---"
+            test -f "$GEN/tauri.settings.gradle" && sed -n '1,240p' "$GEN/tauri.settings.gradle" || true
+            echo "--- POSTMORTEM: tauri.build.gradle.kts ---"
+            test -f "$GEN/app/tauri.build.gradle.kts" && sed -n '1,240p' "$GEN/app/tauri.build.gradle.kts" || true
+            echo "--- POSTMORTEM: debug compile classpath ---"
+            (cd "$GEN" && ./gradlew :app:dependencies --configuration debugCompileClasspath --console=plain) || true
+            echo "--- POSTMORTEM: generated/source tree ---"
+            find "$GEN/app/build/generated" -type f -print 2>/dev/null | sort | head -200 || true
+          fi
+          exit "$BUILD_RC"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
