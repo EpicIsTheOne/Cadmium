@@ -1,6 +1,15 @@
 import { Icon } from "../../shared/components/Icon";
 import type { NormalizedLibrary, TrackId } from "../../shared/domain/media";
 
+type Category = { key: string; label: string; cls: string };
+
+const CATEGORIES: Category[] = [
+  { key: "music", label: "Music", cls: "cat-music" },
+  { key: "podcasts", label: "Podcasts", cls: "cat-podcasts" },
+  { key: "audiobooks", label: "Audiobooks", cls: "cat-audiobooks" },
+  { key: "live", label: "Live Events", cls: "cat-live" },
+];
+
 export function SearchScreen({
   library,
   query,
@@ -8,6 +17,7 @@ export function SearchScreen({
   favoriteTrackIds,
   onToggleFavorite,
   onPlayCollection,
+  onOpenCollection,
 }: {
   library: NormalizedLibrary | null;
   query: string;
@@ -15,8 +25,11 @@ export function SearchScreen({
   favoriteTrackIds: readonly TrackId[];
   onToggleFavorite: (id: TrackId) => void;
   onPlayCollection: (ids: readonly TrackId[], startIndex?: number) => void;
+  onOpenCollection?: (kind: "album" | "playlist", id: string) => void;
 }) {
   const q = query.trim().toLowerCase();
+  const albumTrackIds = (albumId: string): TrackId[] =>
+    library ? library.trackOrder.filter((id) => library.tracksById[id]?.albumId === albumId && library.tracksById[id]?.available) : [];
   const songs = q && library
     ? library.trackOrder
         .map((id) => library.tracksById[id])
@@ -26,6 +39,9 @@ export function SearchScreen({
   const albums = q && library ? library.albumOrder.map((id) => library.albumsById[id]).filter((a) => a.title.toLowerCase().includes(q)).slice(0, 8) : [];
   const artists = q && library ? library.artistOrder.map((id) => library.artistsById[id]).filter((a) => a.name.toLowerCase().includes(q)).slice(0, 8) : [];
   const playlists = q && library ? library.playlistOrder.map((id) => library.playlistsById[id]).filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8) : [];
+
+  const exploreAlbums = library ? library.albumOrder.slice(0, 6).map((id) => library.albumsById[id]) : [];
+  const explorePlaylists = library ? library.playlistOrder.slice(0, 6).map((id) => library.playlistsById[id]) : [];
 
   return (
     <section className="mobile-section">
@@ -41,7 +57,46 @@ export function SearchScreen({
         />
       </div>
 
-      {!q && <p className="muted">Start typing to search your phone's music.</p>}
+      {!q && (
+        <>
+          <div className="cat-grid">
+            {CATEGORIES.map((cat) => (
+              <button type="button" key={cat.key} className={`cat-tile ${cat.cls}`}>
+                <span>{cat.label}</span>
+                <span className="cat-corner"><Icon name={cat.key === "music" ? "music" : cat.key === "live" ? "spark" : "microphone"} size={20} /></span>
+              </button>
+            ))}
+          </div>
+
+          {explorePlaylists.length > 0 && (
+            <div className="rail">
+              <div className="rail-head"><h2>Explore playlists</h2></div>
+              <div className="rail-scroll">
+                {explorePlaylists.map((playlist) => (
+                  <div key={playlist.id} className="collection-card" onClick={() => onPlayCollection(playlist.trackIds)}>
+                    {playlist.artwork?.src ? <img src={playlist.artwork.src} alt={playlist.name} /> : <div className="art-fallback"><Icon name="list" size={18} /></div>}
+                    <span className="collection-title">{playlist.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {exploreAlbums.length > 0 && (
+            <div className="rail">
+              <div className="rail-head"><h2>Explore albums</h2></div>
+              <div className="rail-scroll">
+                {exploreAlbums.map((album) => (
+                  <div key={album.id} className="collection-card" onClick={() => onPlayCollection(albumTrackIds(album.id))}>
+                    {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="album" size={18} /></div>}
+                    <span className="collection-title">{album.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {q && (
         <>
@@ -62,8 +117,8 @@ export function SearchScreen({
           </Group>
           <Group title="Albums">
             {albums.map((album) => (
-              <div key={album.id} className="collection-card">
-                {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="music" size={18} /></div>}
+              <div key={album.id} className="collection-card" onClick={() => onPlayCollection(albumTrackIds(album.id))}>
+                {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="album" size={18} /></div>}
                 <span className="collection-title">{album.title}</span>
               </div>
             ))}

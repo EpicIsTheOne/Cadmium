@@ -23,7 +23,7 @@ import {
   type PermissionState,
 } from "./permissions";
 import { DEFAULT_MOBILE_RHYTHM, shouldRenderRhythm } from "./rhythm";
-import type { NormalizedLibrary, TrackId } from "../shared/domain/media";
+import type { NormalizedLibrary, TrackId, PlaylistId } from "../shared/domain/media";
 import type { EnginePlaybackSnapshot } from "../shared/playback/engine";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { NowPlayingSheet } from "./components/NowPlayingSheet";
@@ -32,10 +32,13 @@ import { HomeScreen } from "./screens/HomeScreen";
 import { SearchScreen } from "./screens/SearchScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { MobileDjScreen } from "./screens/MobileDjScreen";
+import { CollectionView } from "./screens/CollectionView";
 import { PermissionGate } from "./components/PermissionGate";
 import "./mobile.css";
 
-type MobileTab = "home" | "search" | "library" | "settings";
+type MobileTab = "home" | "search" | "library" | "dj" | "settings";
+type CollectionViewState = { kind: "album" | "playlist"; id: string } | null;
 
 export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const preview = isPreviewMode();
@@ -56,6 +59,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [view, setView] = useState<CollectionViewState>(null);
 
   const [snapshot, setSnapshot] = useState<EnginePlaybackSnapshot | null>(null);
   const sheetDepth = (nowPlayingOpen ? 1 : 0) + (queueOpen ? 1 : 0);
@@ -189,6 +193,24 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
     [library, engine],
   );
 
+  const createPlaylist = useCallback(
+    async (name = "My Playlist") => {
+      const maybeCreate = (provider as { createPlaylist?: (n: string) => Promise<PlaylistId> }).createPlaylist;
+      if (!maybeCreate) return;
+      try {
+        await maybeCreate(name);
+        if (library) {
+          const next = await provider.getLibrary();
+          setLibrary(next);
+          setFavoriteTrackIds(await provider.getFavoriteTrackIds());
+        }
+      } catch {
+        /* playlist create failed; keep UI consistent */
+      }
+    },
+    [provider, library],
+  );
+
   if (permission !== "granted") {
     return (
       <PermissionGate
@@ -214,6 +236,19 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   return (
     <div className="app-shell mobile-shell">
       <main className="mobile-content">
+        {view ? (
+          <CollectionView
+            kind={view.kind}
+            id={view.id}
+            library={library as NormalizedLibrary}
+            favoriteTrackIds={favoriteTrackIds}
+            onPlayCollection={playFromList}
+            onToggleFavorite={toggleFavorite}
+            onPlayTrack={(id) => playFromList([id], 0)}
+            onBack={() => setView(null)}
+          />
+        ) : (
+          <>
         {tab === "home" && (
           <HomeScreen
             library={library}
@@ -222,6 +257,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             onToggleFavorite={toggleFavorite}
             onNavigate={setTab}
             onOpenNowPlaying={() => setNowPlayingOpen(true)}
+            onOpenCollection={(kind, id) => setView({ kind, id })}
             onRescan={rescan}
             scanning={scanning}
           />
@@ -234,6 +270,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             favoriteTrackIds={favoriteTrackIds}
             onToggleFavorite={toggleFavorite}
             onPlayCollection={playFromList}
+            onOpenCollection={(kind, id) => setView({ kind, id })}
           />
         )}
         {tab === "library" && (
@@ -245,18 +282,33 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             onRescan={rescan}
             scanning={scanning}
             onNavigate={setTab}
+            onCreatePlaylist={() => createPlaylist()}
+            onOpenCollection={(kind, id) => setView({ kind, id })}
+          />
+        )}
+        {tab === "dj" && (
+          <MobileDjScreen
+            library={library}
+            provider={provider as AndroidLibraryProvider}
+            engine={engine}
+            snapshot={snapshot}
+            onOpenNowPlaying={() => setNowPlayingOpen(true)}
+            onOpenSettings={() => setTab("settings")}
           />
         )}
         {tab === "settings" && (
           <SettingsScreen
             library={library}
             permission={permission}
+            provider={provider as AndroidLibraryProvider}
             onRescan={loadLibrary}
             onNavigate={setTab}
             onPlayCollection={playFromList}
             favoriteTrackIds={favoriteTrackIds}
             onToggleFavorite={toggleFavorite}
           />
+        )}
+        </>
         )}
       </main>
 
@@ -275,6 +327,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
         <TabButton active={tab === "home"} icon="home" label="Home" onClick={() => setTab("home")} />
         <TabButton active={tab === "search"} icon="search" label="Search" onClick={() => setTab("search")} />
         <TabButton active={tab === "library"} icon="library" label="Library" onClick={() => setTab("library")} />
+        <TabButton active={tab === "dj"} icon="spark" label="DJ" onClick={() => setTab("dj")} />
         <TabButton active={tab === "settings"} icon="settings" label="Settings" onClick={() => setTab("settings")} />
       </nav>
 

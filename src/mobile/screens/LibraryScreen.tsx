@@ -13,6 +13,8 @@ export function LibraryScreen({
   onRescan,
   scanning,
   onNavigate,
+  onCreatePlaylist,
+  onOpenCollection,
 }: {
   library: NormalizedLibrary | null;
   favoriteTrackIds: readonly TrackId[];
@@ -21,15 +23,20 @@ export function LibraryScreen({
   onRescan: () => void;
   scanning: boolean;
   onNavigate: (tab: "home" | "search" | "library" | "settings") => void;
+  onCreatePlaylist: () => void;
+  onOpenCollection?: (kind: "album" | "playlist", id: string) => void;
 }) {
   const [segment, setSegment] = useState<Segment>("songs");
   const [newPlaylistName, setNewPlaylistName] = useState("");
+
+  const albumTrackIds = (albumId: string): TrackId[] =>
+    library ? library.trackOrder.filter((id) => library.tracksById[id]?.albumId === albumId && library.tracksById[id]?.available) : [];
 
   if (!library) {
     return (
       <section className="mobile-section">
         <div className="library-head">
-          <h1 className="section-title">Library</h1>
+          <h1 className="section-title">Your Library</h1>
           <button type="button" className="icon-button" aria-label="Scan device" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
         </div>
         <LibraryEmpty library={library} onScan={onRescan} scanning={scanning} />
@@ -37,13 +44,11 @@ export function LibraryScreen({
     );
   }
 
-  // On Android, music comes from the system MediaStore; an empty library
-  // means nothing has been scanned yet, not that the app is broken.
   if (library.trackOrder.length === 0) {
     return (
       <section className="mobile-section">
         <div className="library-head">
-          <h1 className="section-title">Library</h1>
+          <h1 className="section-title">Your Library</h1>
           <button type="button" className="icon-button" aria-label="Scan device" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
         </div>
         <LibraryEmpty library={library} onScan={onRescan} scanning={scanning} />
@@ -54,14 +59,12 @@ export function LibraryScreen({
   return (
     <section className="mobile-section">
       <div className="library-head">
-        <h1 className="section-title">Library</h1>
+        <h1 className="section-title">Your Library</h1>
         <div className="library-head-actions">
           <button type="button" className="icon-button" aria-label="Scan device for music" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
+          <button type="button" className="icon-button" aria-label="Create playlist" onClick={onCreatePlaylist}><Icon name="plus" size={18} /></button>
         </div>
       </div>
-      <p className="library-summary">
-        {library.trackOrder.length} tracks · {library.albumOrder.length} albums · {library.artistOrder.length} artists
-      </p>
 
       <div className="segment-tabs" role="tablist">
         {(["songs", "albums", "artists", "playlists"] as Segment[]).map((seg) => (
@@ -70,6 +73,19 @@ export function LibraryScreen({
           </button>
         ))}
       </div>
+
+      {library.playlistOrder.length === 0 && segment === "playlists" && (
+        <div className="playlist-create">
+          <input
+            type="text"
+            placeholder="New playlist name"
+            value={newPlaylistName}
+            onChange={(event) => setNewPlaylistName(event.target.value)}
+            aria-label="New playlist name"
+          />
+          <button type="button" className="primary-button" disabled={!newPlaylistName.trim()} onClick={() => { onCreatePlaylist(); setNewPlaylistName(""); }}>Create</button>
+        </div>
+      )}
 
       {segment === "songs" && (
         <ul className="list">
@@ -89,13 +105,15 @@ export function LibraryScreen({
       )}
 
       {segment === "albums" && (
-        <ul className="grid">
+        <ul className="lib-grid">
           {library.albumOrder.map((id) => {
             const album = library.albumsById[id];
+            const owner = album.artistIds.map((a) => library.artistsById[a]?.name).filter(Boolean).join(", ") || "Various artists";
             return (
-              <li key={id} className="grid-cell">
-                {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="music" size={20} /></div>}
-                <span className="collection-title">{album.title}</span>
+              <li key={id} className="lib-card" onClick={() => onOpenCollection?.("album", album.id)}>
+                {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="album" size={20} /></div>}
+                <span className="lib-card-title">{album.title}</span>
+                <span className="lib-card-sub">Album • {owner}</span>
               </li>
             );
           })}
@@ -103,30 +121,33 @@ export function LibraryScreen({
       )}
 
       {segment === "artists" && (
-        <ul className="grid">
+        <ul className="lib-grid">
           {library.artistOrder.map((id) => {
             const artist = library.artistsById[id];
             return (
-              <li key={id} className="grid-cell">
-                {artist.artwork?.src ? <img src={artist.artwork.src} alt={artist.name} /> : <div className="art-fallback"><Icon name="music" size={20} /></div>}
-                <span className="collection-title">{artist.name}</span>
+              <li key={id} className="lib-card">
+                {artist.artwork?.src ? <img src={artist.artwork.src} alt={artist.name} /> : <div className="art-fallback"><Icon name="user" size={20} /></div>}
+                <span className="lib-card-title">{artist.name}</span>
+                <span className="lib-card-sub">Artist</span>
               </li>
             );
           })}
         </ul>
       )}
 
-      {segment === "playlists" && (
-        <div className="playlist-create">
-          <input
-            type="text"
-            placeholder="New playlist name"
-            value={newPlaylistName}
-            onChange={(event) => setNewPlaylistName(event.target.value)}
-            aria-label="New playlist name"
-          />
-          <button type="button" className="primary-button" disabled={!newPlaylistName.trim()} onClick={() => setNewPlaylistName("")}>Create</button>
-        </div>
+      {segment === "playlists" && library.playlistOrder.length > 0 && (
+        <ul className="lib-grid">
+          {library.playlistOrder.map((id) => {
+            const playlist = library.playlistsById[id];
+            return (
+              <li key={id} className="lib-card" onClick={() => onOpenCollection?.("playlist", playlist.id)}>
+                {playlist.artwork?.src ? <img src={playlist.artwork.src} alt={playlist.name} /> : <div className="art-fallback"><Icon name="list" size={20} /></div>}
+                <span className="lib-card-title">{playlist.name}</span>
+                <span className="lib-card-sub">Playlist • {playlist.trackIds.length} tracks</span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );

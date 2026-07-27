@@ -10,6 +10,7 @@ export function HomeScreen({
   onOpenNowPlaying,
   onRescan,
   scanning,
+  onOpenCollection,
 }: {
   library: NormalizedLibrary | null;
   favoriteTrackIds: readonly TrackId[];
@@ -19,6 +20,7 @@ export function HomeScreen({
   onOpenNowPlaying: () => void;
   onRescan: () => void;
   scanning: boolean;
+  onOpenCollection?: (kind: "album" | "playlist", id: string) => void;
 }) {
   if (!library) {
     return <section className="mobile-section"><p className="muted">Scanning your library…</p></section>;
@@ -123,7 +125,7 @@ export function HomeScreen({
 
       <Rail title="Albums" onMore={() => onNavigate("library")}>
         {recentAlbums.map((album) => (
-          <div key={album.id} className="collection-card" onClick={() => onPlayCollection(albumTrackIds(album.id))}>
+          <div key={album.id} className="collection-card" onClick={() => onOpenCollection?.("album", album.id)}>
             {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="music" size={20} /></div>}
             <span className="collection-title">{album.title}</span>
           </div>
@@ -132,7 +134,7 @@ export function HomeScreen({
 
       <Rail title="Playlists" onMore={() => onNavigate("library")}>
         {playlists.map((playlist) => (
-          <div key={playlist.id} className="collection-card" onClick={() => onPlayCollection(playlist.trackIds)}>
+          <div key={playlist.id} className="collection-card" onClick={() => onOpenCollection?.("playlist", playlist.id)}>
             {playlist.artwork?.src ? <img src={playlist.artwork.src} alt={playlist.name} /> : <div className="art-fallback"><Icon name="music" size={20} /></div>}
             <span className="collection-title">{playlist.name}</span>
           </div>

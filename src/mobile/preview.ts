@@ -19,6 +19,12 @@ import type {
   TrackId,
 } from "../shared/domain/media";
 import type {
+  DjNarration,
+  DjRecovery,
+  DjSet,
+  DjStatus,
+} from "../domain/dj";
+import type {
   EnginePlaybackSnapshot,
   EngineQueueItem,
   NativeQueueRequest,
@@ -170,6 +176,41 @@ export class PreviewProvider {
   }
   async rescan(): Promise<NormalizedLibrary> {
     return buildSampleLibrary();
+  }
+
+  // ---- Preview-only DJ surface (mirrors local_fallback; no Tauri) ----
+  async getDjStatus(): Promise<DjStatus> {
+    return {
+      activeModel: null,
+      lunaAvailable: false,
+      ai: { connected: false, models: [], message: "Preview mode: local fallback only." },
+      fish: { configured: false, nodeAvailable: false, voiceId: null, voiceLabel: null, toolkitCommit: "", message: "Preview" },
+    };
+  }
+  async getDjCrossfadeMs(): Promise<number> { return 3_000; }
+  async setDjCrossfadeMs(value: number): Promise<number> { return value; }
+  async getDjRecovery(): Promise<DjRecovery | null> { return null; }
+  async saveDjRecovery(): Promise<void> { /* preview-only */ }
+  async endDjSession(): Promise<void> { /* preview-only */ }
+  async generateDjSet(_sessionId: string | null, prompt: string): Promise<DjSet> {
+    const lib = buildSampleLibrary();
+    const trackIds = lib.trackOrder.slice(0, 6);
+    return {
+      id: `preview-set-${Date.now()}`,
+      sessionId: _sessionId ?? `preview-session-${Date.now()}`,
+      title: "From your library",
+      rationale: `A local set built from your library for: ${prompt}.`,
+      narration: `Here's a set from your library${prompt ? ` for “${prompt}”` : ""}. Local mode — Luna isn't configured on mobile yet, so this is a deterministic mix.`,
+      generationMode: "local_fallback",
+      trackIds,
+      trackReasons: trackIds.map((id) => ({ trackId: id, reason: "Local library signal." })),
+      sequence: 0,
+      state: "active",
+      createdAt: Date.now(),
+    };
+  }
+  async synthesizeDjNarration(text: string): Promise<DjNarration> {
+    return { src: "", taggedText: text, spokenText: text, tags: [], cached: false };
   }
 }
 

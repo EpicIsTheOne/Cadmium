@@ -7,7 +7,7 @@
  * from — it only sees the normalized graph.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   Album,
   AlbumId,
@@ -23,6 +23,16 @@ import type {
   TrackId,
 } from "../../shared/domain/media";
 import { emptyLibrary, emptySearchResults } from "../../shared/domain/media";
+import type {
+  DjNarration,
+  DjRecovery,
+  DjSet,
+  DjStatus,
+  DjTranscription,
+  FishVoice,
+  QueueSnapshot,
+  WhisperStatus,
+} from "../../domain/dj";
 
 const asTrackId = (id: string) => id as TrackId;
 const asAlbumId = (id: string) => id as AlbumId;
@@ -331,6 +341,195 @@ export class AndroidLibraryProvider implements MusicProvider {
     await invoke("android_reconcile_media", { candidates: response.candidates });
     return this.getLibrary();
   }
+
+  // ---------------------------------------------------------------------
+  // AI DJ surface — mirrors LocalLibraryProvider's method names/shapes.
+  // These call the shared (non-android_*) Rust DJ commands directly.
+  // ---------------------------------------------------------------------
+
+  async getDjStatus(): Promise<DjStatus> {
+    return invoke<DjStatus>("get_dj_status");
+  }
+
+  async getDjCrossfadeMs(): Promise<number> {
+    return invoke<number>("get_dj_crossfade_ms");
+  }
+
+  async setDjCrossfadeMs(value: number): Promise<number> {
+    return invoke<number>("set_dj_crossfade_ms", {
+      value: Math.max(0, Math.min(8_000, Math.round(value))),
+    });
+  }
+
+  async setFishCredential(apiKey: string): Promise<void> {
+    await invoke<void>("set_fish_credential", { apiKey });
+  }
+
+  async clearFishCredential(): Promise<void> {
+    await invoke<void>("clear_fish_credential");
+  }
+
+  async searchFishVoices(query: string): Promise<readonly FishVoice[]> {
+    return invoke<FishVoice[]>("search_fish_voices", { query });
+  }
+
+  async selectFishVoice(voiceId: string, voiceLabel: string): Promise<void> {
+    await invoke<void>("select_fish_voice", { voiceId, voiceLabel });
+  }
+
+  async previewFishVoice(voiceId: string): Promise<DjNarration> {
+    const narration = await invoke<Omit<DjNarration, "src"> & { path: string }>(
+      "preview_fish_voice",
+      { voiceId },
+    );
+    return { ...narration, src: safeConvertFileSrc(narration.path) };
+  }
+
+  async getWhisperStatus(): Promise<WhisperStatus> {
+    return invoke<WhisperStatus>("get_whisper_status");
+  }
+
+  async downloadWhisperModel(): Promise<WhisperStatus> {
+    return invoke<WhisperStatus>("download_whisper_model");
+  }
+
+  async cancelWhisperDownload(): Promise<void> {
+    await invoke<void>("cancel_whisper_download");
+  }
+
+  async transcribeDjRequest(wavBytes: Uint8Array): Promise<DjTranscription> {
+    return invoke<DjTranscription>("transcribe_dj_request", { wavBytes: Array.from(wavBytes) });
+  }
+
+  async recordDjFeedback(
+    sessionId: string,
+    trackId: TrackId,
+    sentiment: "more" | "less",
+  ): Promise<void> {
+    await invoke<void>("record_dj_feedback", { sessionId, trackId, sentiment });
+  }
+
+  async getDjRecovery(): Promise<DjRecovery | null> {
+    const recovery = await invoke<BackendDjRecovery | null>("get_dj_recovery");
+    if (!recovery) return null;
+    return {
+      ...recovery,
+      currentSet: mapDjSet(recovery.currentSet),
+      ordinaryQueue: mapQueueSnapshot(recovery.ordinaryQueue),
+      djQueue: mapQueueSnapshot(recovery.djQueue),
+    };
+  }
+
+  async saveDjRecovery(
+    sessionId: string,
+    currentSetId: string,
+    ordinaryQueue: QueueSnapshot,
+    djQueue: QueueSnapshot,
+  ): Promise<void> {
+    await invoke<void>("save_dj_recovery", {
+      sessionId,
+      currentSetId,
+      ordinaryQueue: serializeQueueSnapshot(ordinaryQueue),
+      djQueue: serializeQueueSnapshot(djQueue),
+    });
+  }
+
+  async generateDjSet(sessionId: string | null, prompt: string): Promise<DjSet> {
+    const set = await invoke<DjSet>("generate_dj_set", { sessionId, prompt });
+    return mapDjSet(set);
+  }
+
+  async synthesizeDjNarration(text: string): Promise<DjNarration> {
+    const narration = await invoke<Omit<DjNarration, "src"> & { path: string }>(
+      "synthesize_dj_narration",
+      { text },
+    );
+    return { ...narration, src: safeConvertFileSrc(narration.path) };
+  }
+
+  async endDjSession(sessionId: string): Promise<void> {
+    await invoke<void>("end_dj_session", { sessionId });
+  }
+}
+
+// -- DJ mapping helpers (mirrors local-library-provider) ------------------
+
+interface BackendQueueItem {
+  id: string;
+  trackId: string;
+  addedAt: number;
+  source: string;
+  collectionId?: string | null;
+  collectionTitle?: string | null;
+}
+
+interface BackendQueueSnapshot {
+  queue: BackendQueueItem[];
+  queueIndex: number;
+  currentTrackId: string | null;
+  positionMs: number;
+}
+
+interface BackendDjRecovery {
+  sessionId: string;
+  currentSet: DjSet;
+  ordinaryQueue: BackendQueueSnapshot;
+  djQueue: BackendQueueSnapshot;
+}
+
+function safeConvertFileSrc(path: string): string {
+  try {
+    return convertFileSrc(path);
+  } catch {
+    return path;
+  }
+}
+
+function mapDjSet(set: DjSet): DjSet {
+  return {
+    ...set,
+    trackIds: set.trackIds.map((id) => asTrackId(String(id))),
+    trackReasons: set.trackReasons.map((item) => ({
+      ...item,
+      trackId: asTrackId(String(item.trackId)),
+    })),
+  };
+}
+
+function normalizeQueueSource(value: string): QueueItem["source"] {
+  if (value === "recommendation" || value === "playlist" || value === "dj") {
+    return value;
+  }
+  return "user";
+}
+
+function mapQueueSnapshot(snapshot: BackendQueueSnapshot): QueueSnapshot {
+  return {
+    ...snapshot,
+    currentTrackId: snapshot.currentTrackId ? asTrackId(snapshot.currentTrackId) : null,
+    queue: snapshot.queue.map((item) => ({
+      id: item.id,
+      trackId: asTrackId(item.trackId),
+      addedAt: new Date(item.addedAt).toISOString(),
+      source: normalizeQueueSource(item.source),
+      ...(item.collectionId ? { collectionId: item.collectionId } : {}),
+      ...(item.collectionTitle ? { collectionTitle: item.collectionTitle } : {}),
+    })),
+  };
+}
+
+function serializeQueueSnapshot(snapshot: QueueSnapshot): BackendQueueSnapshot {
+  return {
+    ...snapshot,
+    queue: snapshot.queue.map((item) => ({
+      id: item.id,
+      trackId: item.trackId,
+      addedAt: Date.parse(item.addedAt) || Date.now(),
+      source: item.source,
+      ...(item.collectionId ? { collectionId: item.collectionId } : {}),
+      ...(item.collectionTitle ? { collectionTitle: item.collectionTitle } : {}),
+    })),
+  };
 }
 
 export const createAndroidMusicProvider = () => new AndroidLibraryProvider();
