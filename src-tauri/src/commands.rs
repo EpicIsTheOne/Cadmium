@@ -40,7 +40,7 @@ impl AppState {
     }
 }
 
-fn lock_repository<'a>(
+pub(crate) fn lock_repository<'a>(
     state: &'a State<'a, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, LibraryRepository>, String> {
     state
@@ -49,7 +49,7 @@ fn lock_repository<'a>(
         .map_err(|_| "library repository lock is poisoned".to_owned())
 }
 
-fn allow_library_assets(app: &AppHandle, library: &NormalizedLibraryDto) -> Result<(), String> {
+pub(crate) fn allow_library_assets(app: &AppHandle, library: &NormalizedLibraryDto) -> Result<(), String> {
     let scope = app.asset_protocol_scope();
     for track in &library.tracks {
         if let Some(path) = &track.source_path {

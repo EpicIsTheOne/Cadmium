@@ -95,11 +95,6 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
 
     companion object {
         var stateCallback: ((Map<String, Any?>) -> Unit)? = null
-
-        /** Called by the MediaStorePlugin to forward candidates to Rust reconcile. */
-        fun reconcileMedia(candidates: List<Map<String, Any?>>) {
-            // Forwarded to Rust android_reconcile_media through the Tauri channel.
-        }
     }
 
     data class MediaItemList(

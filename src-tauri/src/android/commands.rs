@@ -9,10 +9,10 @@ use crate::android::media_store::{self, AndroidMediaCandidateDto};
 use crate::android::playback::{
     self, AndroidQueueItem, NativePlaybackState,
 };
-use crate::library::ScanSummaryDto;
+use crate::library::{NormalizedLibraryDto, ScanSummaryDto, SearchResultsDto};
 use tauri::State;
 
-use crate::commands::AppState;
+use crate::commands::{lock_repository, AppState};
 
 #[tauri::command]
 pub fn android_media_store_scan(_app: tauri::AppHandle) -> Result<ScanSummaryDto, String> {
@@ -119,4 +119,60 @@ pub fn android_accept_playback_state(state: NativePlaybackState) -> Result<(), S
         is_shuffle: false,
         queue: Vec::new(),
     })
+}
+
+// ── Library read surface ────────────────────────────────────────────────────
+// These mirror the desktop read commands but are exposed under android_* names
+// so the mobile renderer has a stable, product-specific contract. They read the
+// shared repository that MediaStore reconciliation populates.
+
+#[tauri::command]
+pub fn android_get_library(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<NormalizedLibraryDto, String> {
+    let library = lock_repository(&state)?
+        .get_library()
+        .map_err(|error| error.to_string())?;
+    crate::commands::allow_library_assets(&app, &library)?;
+    Ok(library)
+}
+
+#[tauri::command]
+pub fn android_search_library(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<SearchResultsDto, String> {
+    lock_repository(&state)?
+        .search(&query)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn android_get_favorite_track_ids(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    lock_repository(&state)?
+        .get_favorite_track_ids()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn android_set_track_favorite(
+    state: State<'_, AppState>,
+    track_id: String,
+    favorite: bool,
+) -> Result<bool, String> {
+    lock_repository(&state)?
+        .set_track_favorite(&track_id, favorite)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn android_get_recent_track_ids(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    lock_repository(&state)?
+        .get_recent_track_ids()
+        .map_err(|error| error.to_string())
 }

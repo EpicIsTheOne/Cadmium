@@ -91,7 +91,12 @@ pub fn run() {
             android::commands::android_set_volume,
             android::commands::android_set_repeat_mode,
             android::commands::android_set_shuffle,
-            android::commands::android_accept_playback_state
+            android::commands::android_accept_playback_state,
+            android::commands::android_get_library,
+            android::commands::android_search_library,
+            android::commands::android_get_favorite_track_ids,
+            android::commands::android_set_track_favorite,
+            android::commands::android_get_recent_track_ids
         ])
         .run(tauri::generate_context!())
         .expect("error while running Cadmium");

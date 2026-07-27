@@ -5,12 +5,16 @@ import android.content.ContentUris
 import android.database.Cursor
 import android.net.Uri
 import android.provider.MediaStore
+import app.tauri.Tauri
 import app.tauri.annotation.Command
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import app.tauri.plugin.Invoke
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -22,17 +26,26 @@ import kotlinx.coroutines.withContext
 @TauriPlugin
 class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
     private val collection: Uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+    private val scope = CoroutineScope(Dispatchers.Default + Job())
 
     @Command
     fun scan(invoke: Invoke) {
-        val result = JSObject()
-        val candidates = query()
-        val arr = JSObject() // placeholder; real bridge passes the list to android_reconcile_media
-        result.put("candidates", candidates.size)
-        // The Rust side performs the reconcile via android_reconcile_media; here we
-        // hand the raw candidate list to the bridge which forwards it.
-        RustBridge.reconcileMedia(candidates)
-        invoke.resolve(result)
+        // Run the query off the main thread, then hand the candidate list to the
+        // Rust side via android_reconcile_media (which writes the shared library).
+        scope.launch {
+            val candidates = withContext(Dispatchers.IO) { query() }
+            val payload = JSObject()
+            payload.put("candidates", candidates.toTypedArray())
+            try {
+                Tauri.invoke("android_reconcile_media", payload) { _: JSObject ->
+                    val result = JSObject()
+                    result.put("count", candidates.size)
+                    invoke.resolve(result)
+                }
+            } catch (error: Throwable) {
+                invoke.reject(error.message ?: "MediaStore reconcile failed")
+            }
+        }
     }
 
     private fun query(): List<Map<String, Any?>> {

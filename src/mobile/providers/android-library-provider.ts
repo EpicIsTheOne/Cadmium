@@ -40,7 +40,7 @@ interface BackendTrack {
   year?: number | null;
   genre?: string | null;
   artworkPath?: string | null;
-  contentUri: string;
+  sourcePath: string;
   available: boolean;
   format: string;
 }
@@ -105,7 +105,7 @@ function mapTrack(track: BackendTrack): Track {
     artwork: artwork(track.artworkPath, track.title),
     source: {
       kind: "local-file",
-      locator: track.contentUri,
+      locator: track.sourcePath,
       format: track.format,
     },
   };
@@ -274,7 +274,9 @@ export class AndroidLibraryProvider implements MusicProvider {
 
   /** Android-specific: trigger a MediaStore rescan and return the new library. */
   async rescan(): Promise<NormalizedLibrary> {
-    await invoke("android_rescan_library");
+    // The Kotlin MediaStorePlugin queries MediaStore off-thread and calls back
+    // into Rust android_reconcile_media, which writes the shared library.
+    await invoke("plugin:mediastore|scan");
     return this.getLibrary();
   }
 }

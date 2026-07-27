@@ -2740,6 +2740,13 @@ impl LibraryRepository {
                 let folder_path: String = row.get(13)?;
                 let source_kind: String = row.get(14)?;
                 let canonical_source = fs::canonicalize(&source_path).ok();
+                // Android tracks reference content:// URIs that cannot be
+                // canonicalized; the renderer needs the raw URI for playback.
+                let android_locator = if source_kind == "android" {
+                    Some(source_path.clone())
+                } else {
+                    None
+                };
                 let available = database_available
                     && match source_kind.as_str() {
                         // Spotify membership is an exact-file allowlist. Its watched-folder path is
@@ -2769,7 +2776,9 @@ impl LibraryRepository {
                     genre: row.get(7)?,
                     artwork_path: artwork_ref.and_then(|value| self.resolve_artwork_ref(&value)),
                     source_path: if available {
-                        canonical_source.map(|path| path.to_string_lossy().into_owned())
+                        android_locator.or_else(|| {
+                            canonical_source.map(|path| path.to_string_lossy().into_owned())
+                        })
                     } else {
                         None
                     },
@@ -2782,7 +2791,7 @@ impl LibraryRepository {
         Ok(tracks)
     }
 
-    fn get_recent_track_ids(&self) -> LibraryResult<Vec<String>> {
+    pub(crate) fn get_recent_track_ids(&self) -> LibraryResult<Vec<String>> {
         let mut statement = self.conn.prepare(
             "SELECT track_id FROM recent_plays GROUP BY track_id ORDER BY MAX(played_at) DESC LIMIT 20",
         )?;
