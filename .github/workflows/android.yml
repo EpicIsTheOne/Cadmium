@@ -92,14 +92,7 @@ jobs:
         if: ${{ inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
-          TAURI_GRADLE=$GEN/app/tauri.build.gradle.kts
-          if [ -f "$TAURI_GRADLE" ]; then
-            GRADLE="$TAURI_GRADLE"
-            echo "Targeting tauri.build.gradle.kts"
-          else
-            GRADLE=$GEN/app/build.gradle.kts
-            echo "tauri.build.gradle.kts not found, using build.gradle.kts"
-          fi
+          GRADLE=$GEN/app/build.gradle.kts
           test -f "$GRADLE" || { echo "build file missing"; exit 0; }
           python3 - "$GRADLE" <<'PY' || echo "media3 insert skip"
           import sys
@@ -112,20 +105,14 @@ jobs:
           ]
           if 'media3-exoplayer' in s:
               print('media3 already present'); sys.exit(0)
-          apply_marker = 'apply(from = "tauri.build.gradle.kts")'
-          ai = s.find(apply_marker)
-          if ai != -1:
-              # Inside rust {} block — insert before apply() so the
-              # dependencies scope is correct.
-              indent = '    '
-          else:
-              indent = '    '
-              ai = len(s)
-          lines = '\n'.join(f'{indent}implementation("{d}")' for d in media3)
+          # Append at end of file, OUTSIDE any block, so we never
+          # nest a dependencies {} inside rust {} (which corrupts
+          # the rust plugin config and prevents TauriActivity gen).
+          lines = '\n'.join(f'    implementation("{d}")' for d in media3)
           block = f'\ndependencies {{\n{lines}\n}}\n'
-          s = s[:ai] + block + s[ai:]
+          s = s.rstrip() + '\n' + block
           open(p, 'w').write(s)
-          print('media3 deps inserted')
+          print('media3 deps appended at end of build.gradle.kts')
           PY
           echo "--- media3 grep ---"
           grep -n "media3" "$GRADLE" || true
