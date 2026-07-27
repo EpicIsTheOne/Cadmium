@@ -15,7 +15,7 @@
     "tauri:build": "tauri build",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
-    "android:build:debug": "tauri android build --debug",
+    "android:build:debug": "tauri android build --debug --target aarch64 --target armv7",
     "android:build:release": "tauri android build",
     "android:test": "echo 'Android module tests run as cargo tests (shared Rust logic) + tsc for the mobile UI; device/emulator verification requires ANDROID_HOME + NDK.' && npm run typecheck",
     "check": "npm run typecheck && npm test && npm run build"
