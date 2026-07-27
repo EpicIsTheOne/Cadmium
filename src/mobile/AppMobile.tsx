@@ -17,6 +17,7 @@ import {
   createAndroidMusicProvider,
 } from "./providers/android-library-provider";
 import { AndroidPlaybackEngine } from "./playback/mobile-engine";
+import { isPreviewMode, createPreviewProvider } from "./preview";
 import {
   resolvePermissionStatus,
   type PermissionState,
@@ -32,13 +33,15 @@ import { SearchScreen } from "./screens/SearchScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { PermissionGate } from "./components/PermissionGate";
+import "./mobile.css";
 
 type MobileTab = "home" | "search" | "library" | "settings";
 
 export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
-  const provider = useMemo<AndroidLibraryProvider>(
-    () => createAndroidMusicProvider(),
-    [],
+  const preview = isPreviewMode();
+  const provider = useMemo<AndroidLibraryProvider | ReturnType<typeof createPreviewProvider>>(
+    () => (preview ? (createPreviewProvider() as unknown as AndroidLibraryProvider) : createAndroidMusicProvider()),
+    [preview],
   );
   const engine = useMemo(
     () => (runtime.playback as AndroidPlaybackEngine) ?? new AndroidPlaybackEngine(),
@@ -48,7 +51,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const [tab, setTab] = useState<MobileTab>("home");
   const [library, setLibrary] = useState<NormalizedLibrary | null>(null);
   const [favoriteTrackIds, setFavoriteTrackIds] = useState<readonly TrackId[]>([]);
-  const [permission, setPermission] = useState<PermissionState>("unknown");
+  const [permission, setPermission] = useState<PermissionState>(preview ? "granted" : "unknown");
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState("");

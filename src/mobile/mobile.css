@@ -1,0 +1,293 @@
+/* Cadmium mobile shell — phone-first layout, dark cyber aesthetic.
+   Rendered for Android and for the browser preview (?platform=android).
+   Centered to a phone column on wide screens so it can be screenshotted.
+   All rules are scoped under .mobile-shell so they never touch the desktop UI. */
+
+.app-shell.mobile-shell {
+  --accent: #36e0a8;
+  --accent-dim: rgba(54, 224, 168, 0.16);
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+  grid-template-rows: none;
+  max-width: 480px;
+  margin: 0 auto;
+  height: 100vh;
+  height: 100dvh;
+  background:
+    radial-gradient(circle at 80% 0%, rgba(54, 224, 168, 0.10), transparent 22rem),
+    linear-gradient(180deg, #0b0e1a, #080a14);
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+}
+
+.mobile-shell .mobile-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  scrollbar-width: none;
+}
+.mobile-shell .mobile-content::-webkit-scrollbar { display: none; }
+
+.mobile-shell .mobile-section { display: flex; flex-direction: column; gap: 18px; }
+
+.mobile-shell .section-title {
+  margin: 4px 2px 2px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.mobile-shell .muted { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.mobile-shell .settings-group p { color: var(--muted); }
+
+/* library head + segment tabs */
+.mobile-shell .library-head { display: flex; align-items: center; justify-content: space-between; }
+.mobile-shell .library-head .section-title { margin: 0; }
+.mobile-shell .icon-button {
+  display: inline-grid; place-items: center;
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+  transition: background .15s ease, color .15s ease, transform .1s ease;
+}
+.mobile-shell .icon-button:active { transform: scale(0.92); }
+.mobile-shell .icon-button.is-active { color: var(--accent); background: var(--accent-dim); }
+
+.mobile-shell .segment-tabs {
+  display: flex; gap: 6px;
+  padding: 4px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.mobile-shell .segment-tab {
+  flex: 1; padding: 8px 0;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 13px; font-weight: 600;
+  background: transparent;
+  transition: background .15s ease, color .15s ease;
+}
+.mobile-shell .segment-tab.is-active { color: var(--ink); background: var(--surface-raised); }
+
+/* lists */
+.mobile-shell .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mobile-shell .list-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 6px;
+  border-radius: 12px;
+}
+.mobile-shell .list-row:active { background: var(--surface-soft); }
+.mobile-shell .list-play {
+  display: flex; align-items: center; gap: 12px;
+  flex: 1; min-width: 0; text-align: left;
+  background: transparent; color: inherit;
+}
+.mobile-shell .row-art {
+  width: 48px; height: 48px; border-radius: 10px; object-fit: cover; flex: none;
+  background: var(--surface-raised);
+}
+.mobile-shell .row-meta { display: flex; flex-direction: column; min-width: 0; }
+.mobile-shell .row-title {
+  color: var(--ink); font-size: 15px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mobile-shell .row-sub {
+  color: var(--muted); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* grids for albums/artists */
+.mobile-shell .grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.mobile-shell .grid-cell { display: flex; flex-direction: column; gap: 6px; }
+.mobile-shell .grid-cell img { width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; }
+.mobile-shell .collection-title {
+  color: var(--muted); font-size: 13px; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* rails / cards (home) */
+.mobile-shell .rail { display: flex; flex-direction: column; gap: 10px; }
+.mobile-shell .rail-head { display: flex; align-items: baseline; justify-content: space-between; }
+.mobile-shell .rail-head h2 { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+.mobile-shell .rail-more { background: none; color: var(--accent); font-size: 13px; font-weight: 600; padding: 0; }
+.mobile-shell .rail-scroll { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.mobile-shell .rail-scroll::-webkit-scrollbar { display: none; }
+.mobile-shell .track-card {
+  flex: 0 0 auto; width: 148px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px; padding: 10px;
+}
+.mobile-shell .track-card .track-play { display: flex; gap: 10px; align-items: center; text-align: left; background: none; color: inherit; }
+.mobile-shell .track-card img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; }
+.mobile-shell .collection-card {
+  flex: 0 0 auto; width: 116px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.mobile-shell .collection-card img { width: 116px; height: 116px; border-radius: 12px; object-fit: cover; }
+
+/* shared meta text inside track cards */
+.mobile-shell .track-meta { display: flex; flex-direction: column; min-width: 0; }
+.mobile-shell .track-title {
+  color: var(--ink); font-size: 14px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mobile-shell .track-sub {
+  color: var(--muted); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* search */
+.mobile-shell .search-field {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 14px;
+  background: var(--surface-soft); border: 1px solid var(--line);
+  color: var(--muted);
+}
+.mobile-shell .search-field input {
+  flex: 1; background: none; border: 0; outline: none; color: var(--ink); font-size: 15px;
+}
+.mobile-shell .search-group { display: flex; flex-direction: column; gap: 6px; }
+.mobile-shell .group-title { margin: 6px 2px 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+/* settings */
+.mobile-shell .settings-group {
+  display: flex; flex-direction: column; gap: 0;
+  background: var(--surface-soft); border: 1px solid var(--line);
+  border-radius: 16px; padding: 4px 14px;
+}
+.mobile-shell .settings-group h2 { margin: 12px 2px 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.mobile-shell .settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 2px; color: var(--ink); font-size: 14px; border-top: 1px solid var(--line);
+}
+.mobile-shell .settings-row:first-of-type { border-top: 0; }
+.mobile-shell .settings-row span:last-child { color: var(--muted); }
+.mobile-shell .settings-action {
+  display: flex; align-items: center; gap: 8px;
+  margin: 12px 2px; padding: 12px; border-radius: 12px;
+  background: var(--surface-raised); color: var(--ink); font-weight: 600; width: auto;
+  border: 1px solid var(--line);
+}
+
+/* primary buttons (permission, playlist create) */
+.mobile-shell .primary-button {
+  padding: 14px 18px; border-radius: 14px;
+  background: var(--accent); color: #04130d; font-weight: 700; font-size: 15px;
+  width: 100%;
+}
+.mobile-shell .primary-button:disabled { opacity: .5; }
+.mobile-shell .playlist-create { display: flex; gap: 8px; }
+.mobile-shell .playlist-create input {
+  flex: 1; padding: 12px 14px; border-radius: 12px;
+  background: var(--surface-soft); border: 1px solid var(--line); color: var(--ink);
+}
+
+/* art fallbacks */
+.mobile-shell .art-fallback,
+.mobile-shell .mini-art-fallback,
+.mobile-shell .row-art.art-fallback {
+  display: grid; place-items: center; color: var(--muted);
+  background: linear-gradient(135deg, var(--surface-raised), #0c0f1e);
+}
+
+/* mini player (above tabs) */
+.mobile-shell .mobile-mini-player {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  margin: 0 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.mobile-shell .mini-art { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: none; background: var(--surface-raised); }
+.mobile-shell .mini-meta { flex: 1; min-width: 0; }
+.mobile-shell .mini-title { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mobile-shell .mini-artist { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* bottom tabs */
+.mobile-shell .mobile-tabs {
+  display: flex;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 12, 22, 0.92);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+}
+.mobile-shell .mobile-tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 6px 0; border-radius: 12px;
+  color: var(--muted); font-size: 11px; font-weight: 600;
+  background: transparent;
+}
+.mobile-shell .mobile-tab.is-active { color: var(--accent); }
+.mobile-shell .mobile-tab.is-active svg { filter: drop-shadow(0 0 6px var(--accent-dim)); }
+
+/* permission gate */
+.mobile-shell .mobile-permission {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  padding: 28px; z-index: 40; background: var(--surface);
+}
+.mobile-shell .permission-card {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px;
+  max-width: 320px; padding: 28px 22px; border-radius: 22px; color: var(--ink);
+}
+.mobile-shell .permission-card h1 { margin: 0; font-size: 22px; }
+.mobile-shell .permission-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.mobile-shell .permission-hint { color: var(--quiet); }
+.mobile-shell .panel-surface { background: var(--surface-raised); border: 1px solid var(--line); }
+
+/* sheets (now playing / queue) */
+.mobile-shell .mobile-sheet {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  padding: 10px 18px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, #0c0f1e, #080a14);
+  border-top-left-radius: 22px; border-top-right-radius: 22px;
+  animation: sheet-up .22s ease;
+}
+@keyframes sheet-up { from { transform: translateY(8%); opacity: .6; } to { transform: none; opacity: 1; } }
+.mobile-shell .sheet-grabber { width: 40px; height: 4px; border-radius: 99px; background: var(--line-strong); margin: 4px auto 8px; }
+.mobile-shell .sheet-close { position: absolute; top: 14px; right: 14px; }
+.mobile-shell .sheet-title { margin: 6px 0 12px; font-size: 18px; color: var(--ink); }
+
+.mobile-shell .now-playing { align-items: center; gap: 14px; }
+.mobile-shell .now-playing-art {
+  position: relative; width: min(64vw, 260px); aspect-ratio: 1;
+  border-radius: 20px; overflow: hidden; box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+}
+.mobile-shell .now-playing-art img { width: 100%; height: 100%; object-fit: cover; }
+.mobile-shell .rhythm-on { outline: 2px solid var(--accent); }
+.mobile-shell .rhythm-badge {
+  position: absolute; top: 10px; left: 10px; padding: 3px 10px; border-radius: 99px;
+  background: var(--accent); color: #04130d; font-size: 11px; font-weight: 700;
+}
+.mobile-shell .now-playing-meta { text-align: center; }
+.mobile-shell .now-playing-meta h2 { margin: 0 0 4px; font-size: 22px; color: var(--ink); }
+.mobile-shell .now-playing-meta p { margin: 0; color: var(--muted); }
+.mobile-shell .seek { width: 100%; accent-color: var(--accent); }
+.mobile-shell .seek-labels { display: flex; justify-content: space-between; color: var(--quiet); font-size: 12px; }
+.mobile-shell .now-playing-controls { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 4px; }
+.mobile-shell .play-button { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--accent); color: #04130d; }
+.mobile-shell .now-playing-actions { display: flex; justify-content: center; gap: 40px; margin-top: 6px; }
+
+/* queue */
+.mobile-shell .queue-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.mobile-shell .queue-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.mobile-shell .queue-row.is-current .queue-title { color: var(--accent); }
+.mobile-shell .queue-jump { display: flex; align-items: center; gap: 12px; background: none; color: var(--ink); flex: 1; text-align: left; }
+.mobile-shell .queue-index { width: 22px; text-align: center; color: var(--muted); }
+.mobile-shell .queue-title { color: var(--ink); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* empty state tweaks */
+.mobile-shell .empty-state { margin: auto; max-width: 320px; }

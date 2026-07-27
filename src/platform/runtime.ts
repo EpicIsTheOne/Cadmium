@@ -88,6 +88,14 @@ export function detectPlatform(): PlatformId {
   if (typeof window === "undefined") {
     return "web";
   }
+  // Dev-only override for the browser preview, e.g. ?platform=android&preview=1.
+  // In a real Tauri app the URL has no query string, so this is a no-op there.
+  if (typeof window.location !== "undefined") {
+    const override = new URLSearchParams(window.location.search).get("platform");
+    if (override === "android" || override === "desktop" || override === "web") {
+      return override;
+    }
+  }
   const flags = (window as unknown as { __CADMIUM__?: Record<string, unknown> })
     .__CADMIUM__;
   if (flags && typeof flags.platform === "string") {
