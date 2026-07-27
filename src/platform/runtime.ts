@@ -104,18 +104,18 @@ export function detectPlatform(): PlatformId {
   }
   // Tauri injects its own markers; fall back to capability probing.
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    // NOTE: previously this relied on window.__TAURI_ANDROID__, which is
-    // never set by the Tauri Android runtime. The Android WebView exposes
-    // "Android" in its userAgent, which is available synchronously before
-    // any app JS runs (unlike the async-injected bridge globals). Use that
-    // as the authoritative signal so the device renders the mobile shell.
-    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-    if (/Android/i.test(ua)) return "android";
-    // Belt-and-suspenders: honor an explicit mobile marker if a future
-    // Tauri version sets one.
-    if ((window as unknown as { __TAURI_ANDROID__?: boolean }).__TAURI_ANDROID__) {
+    // Strongest real-device signal: our Kotlin PermissionBridge injects
+    // window.__CADMIUM_ANDROID__ on the actual Android app (see
+    // PermissionBridge.kt). If present, we are definitely on device.
+    if ((window as unknown as { __CADMIUM_ANDROID__?: unknown }).__CADMIUM_ANDROID__) {
       return "android";
     }
+    // The Android WebView exposes "Android" in its userAgent, available
+    // synchronously before any app JS runs (unlike the async-injected
+    // bridge globals). Use that as the authoritative fallback so the device
+    // renders the mobile shell instead of the desktop UI.
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    if (/Android/i.test(ua)) return "android";
     return "desktop";
   }
   return "web";

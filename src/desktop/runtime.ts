@@ -40,9 +40,17 @@ export function createRuntimeForCurrentPlatform(): CadmiumRuntime {
     if (isPreviewMode()) {
       return createPreviewRuntime();
     }
-    // Android runtime is assembled by the mobile entry; this branch is only
-    // reached if the renderer is shared. Fall back to a usable desktop wiring.
-    return createDesktopRuntime();
+    // REAL DEVICE: AppMobile assembles its own AndroidLibraryProvider and
+    // AndroidPlaybackEngine from runtime.playback, so it only needs this
+    // runtime to carry the correct `platform` flag (so main.tsx mounts the
+    // mobile shell) plus android capabilities. Returning createDesktopRuntime()
+    // here was the bug that made every phone render the Windows desktop UI.
+    return {
+      platform: "android",
+      capabilities: capabilitiesFor("android"),
+      library: null,
+      playback: null,
+    };
   }
   if (platform === "web") {
     return {
