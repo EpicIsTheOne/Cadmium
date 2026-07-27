@@ -24,9 +24,13 @@ export function HomeScreen({
   const recentAlbums = library.albumOrder.slice(0, 8).map((id) => library.albumsById[id]);
   const playlists = library.playlistOrder.slice(0, 6).map((id) => library.playlistsById[id]);
 
+  const albumTrackIds = (albumId: string): TrackId[] =>
+    library.trackOrder.filter((id) => library.tracksById[id]?.albumId === albumId && library.tracksById[id]?.available);
+
   return (
     <section className="mobile-section">
       <h1 className="section-title">Home</h1>
+      <p className="section-sub">Your music, ready when you are.</p>
       <Rail title="Recent plays" onMore={() => onNavigate("library")}>
         {recent.length === 0 && <p className="muted">No recent plays yet.</p>}
         {recent.map((id) => {
@@ -67,7 +71,7 @@ export function HomeScreen({
 
       <Rail title="Albums" onMore={() => onNavigate("library")}>
         {recentAlbums.map((album) => (
-          <div key={album.id} className="collection-card" onClick={onOpenNowPlaying}>
+          <div key={album.id} className="collection-card" onClick={() => onPlayCollection(albumTrackIds(album.id))}>
             {album.artwork?.src ? <img src={album.artwork.src} alt={album.title} /> : <div className="art-fallback"><Icon name="music" size={20} /></div>}
             <span className="collection-title">{album.title}</span>
           </div>

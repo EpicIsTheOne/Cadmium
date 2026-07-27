@@ -40,6 +40,9 @@ export function LibraryScreen({
         <h1 className="section-title">Library</h1>
         <button type="button" className="icon-button" aria-label="Rescan library" onClick={onRescan}><Icon name="refresh" size={18} /></button>
       </div>
+      <p className="library-summary">
+        {library.trackOrder.length} tracks · {library.albumOrder.length} albums · {library.artistOrder.length} artists
+      </p>
 
       <div className="segment-tabs" role="tablist">
         {(["songs", "albums", "artists", "playlists"] as Segment[]).map((seg) => (

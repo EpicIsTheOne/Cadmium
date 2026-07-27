@@ -21,7 +21,7 @@ export function MiniPlayer({
   if (!track) return null;
   const favorite = favoriteTrackIds.includes(track.id);
   return (
-    <div className="mobile-mini-player" onClick={onOpenNowPlaying} role="button" aria-label="Open now playing">
+    <div className={`mobile-mini-player ${snapshot.isPlaying ? "is-playing" : ""}`} onClick={onOpenNowPlaying} role="button" aria-label="Open now playing">
       {track.artwork ? (
         <img className="mini-art" src={track.artwork.src} alt={track.artwork.alt} />
       ) : (

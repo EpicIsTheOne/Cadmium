@@ -64,6 +64,7 @@ export function NowPlayingSheet({
       <div className="now-playing-meta">
         <h2>{track.title}</h2>
         <p>{track.artistIds.map((id) => library?.artistsById[id]?.name ?? "").join(", ")}</p>
+        {track.albumId ? <p className="np-album">{library?.albumsById[track.albumId]?.title}</p> : null}
       </div>
 
       <input
