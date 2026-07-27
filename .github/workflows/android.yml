@@ -38,7 +38,7 @@ jobs:
       - name: Setup Rust + Android targets
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Setup Android SDK + NDK
         uses: android-actions/setup-android@v3
@@ -119,6 +119,28 @@ jobs:
           PY
           echo "--- media3 grep ---"
           grep -n "media3" "$GRADLE" || true
+
+      - name: Restrict APK to phone ABIs (shrink size)
+        if: ${{ inputs.custom_android == 'true' }}
+        run: |
+          set -euo pipefail
+          GRADLE=$GEN/app/build.gradle.kts
+          test -f "$GRADLE" || { echo "build file missing"; exit 0; }
+          if grep -q "abiFilters" "$GRADLE"; then
+            echo "abiFilters already set"; exit 0
+          fi
+          # Phones are arm64/armeabi only. Drop x86/x86_64 to avoid a
+          # ~750MB universal APK (Rust core compiled for 4 arches).
+          python3 - "$GRADLE" <<PY
+          import sys
+          p = sys.argv[1]
+          s = open(p).read().rstrip() + "\n" + open(0).read() if False else open(p).read().rstrip()
+          block = '\nandroid {\n  ndk {\n    abiFilters += listOf("arm64-v8a", "armeabi-v7a")\n  }\n  splits { abi { isEnable = false } }\n}\n'
+          open(p, "w").write(s + block)
+          print("abiFilters appended")
+          PY
+          echo "--- abiFilters grep ---"
+          grep -n "abiFilters" "$GRADLE" || true
 
       # NOTE: Tauri v2 auto-registers @TauriPlugin classes at runtime; no
       # MainActivity change is needed. The earlier `add(Plugin())` approach was

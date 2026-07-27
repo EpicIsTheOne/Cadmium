@@ -104,11 +104,19 @@ export function detectPlatform(): PlatformId {
   }
   // Tauri injects its own markers; fall back to capability probing.
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    // Desktop and Android both expose Tauri internals; prefer an explicit
-    // mobile marker if present, otherwise assume desktop for the Tauri host.
-    return (window as unknown as { __TAURI_ANDROID__?: boolean }).__TAURI_ANDROID__
-      ? "android"
-      : "desktop";
+    // NOTE: previously this relied on window.__TAURI_ANDROID__, which is
+    // never set by the Tauri Android runtime. The Android WebView exposes
+    // "Android" in its userAgent, which is available synchronously before
+    // any app JS runs (unlike the async-injected bridge globals). Use that
+    // as the authoritative signal so the device renders the mobile shell.
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    if (/Android/i.test(ua)) return "android";
+    // Belt-and-suspenders: honor an explicit mobile marker if a future
+    // Tauri version sets one.
+    if ((window as unknown as { __TAURI_ANDROID__?: boolean }).__TAURI_ANDROID__) {
+      return "android";
+    }
+    return "desktop";
   }
   return "web";
 }
