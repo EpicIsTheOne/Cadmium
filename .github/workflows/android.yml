@@ -68,7 +68,10 @@ jobs:
           DST=$GEN/app/src/main
           echo "DST=$DST"
           mkdir -p "$DST/java/com/cadmium/music"
-          cp -r "$SRC/java/com/cadmium/music/." "$DST/java/com/cadmium/music/"
+          # Preserve Tauri's generated MainActivity.kt: it imports the generated
+          # com.cadmium.music.generated.TauriActivity for the current Tauri version.
+          # Our old source copy imported the removed app.tauri.TauriActivity path.
+          find "$SRC/java/com/cadmium/music" -maxdepth 1 -type f -name '*.kt' ! -name 'MainActivity.kt' -exec cp {} "$DST/java/com/cadmium/music/" \;
           # NOTE: we do NOT overwrite AndroidManifest.xml — Tauri's generated
           # manifest is required for the `rust` plugin to emit TauriActivity.
           # Permissions/service attrs are patched into the generated manifest below.
