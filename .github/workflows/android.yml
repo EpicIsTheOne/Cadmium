@@ -54,13 +54,6 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Clean stale artifacts (fixes TauriActivity stale-cache bug tauri#13983)
-        run: |
-          set -euo pipefail
-          rm -rf src-tauri/target
-          rm -rf $GEN/app/build
-          echo "Cleaned Rust target + build dirs only; preserved generated/ (contains TauriActivity)"
-
       - name: Init Android project
         run: npm run android:init
 
@@ -99,12 +92,47 @@ jobs:
         if: ${{ inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
-          GRADLE=$GEN/app/build.gradle.kts
-          echo "--- media3 injection DIAGNOSTIC SKIPPED ---"
-          echo "Target file: $GRADLE"
+          TAURI_GRADLE=$GEN/app/tauri.build.gradle.kts
+          if [ -f "$TAURI_GRADLE" ]; then
+            GRADLE="$TAURI_GRADLE"
+            echo "Targeting tauri.build.gradle.kts"
+          else
+            GRADLE=$GEN/app/build.gradle.kts
+            echo "tauri.build.gradle.kts not found, using build.gradle.kts"
+          fi
           test -f "$GRADLE" || { echo "build file missing"; exit 0; }
-          echo "--- existing deps lines ---"
-          grep -n "implementation\|tauri-plugin" "$GRADLE" || true
+          python3 - "$GRADLE" <<'PY' || echo "media3 insert skip"
+          import sys
+          p = sys.argv[1]
+          s = open(p).read()
+          media3 = [
+              'androidx.media3:media3-exoplayer:1.3.1',
+              'androidx.media3:media3-session:1.3.1',
+              'androidx.media3:media3-common:1.3.1',
+          ]
+          if 'media3-exoplayer' in s:
+              print('media3 already present'); sys.exit(0)
+          apply_marker = 'apply(from = "tauri.build.gradle.kts")'
+          ai = s.find(apply_marker)
+          if ai != -1:
+              # Inside rust {} block — insert before apply() so the
+              # dependencies scope is correct.
+              indent = '    '
+          else:
+              indent = '    '
+              ai = len(s)
+          lines = '\n'.join(f'{indent}implementation("{d}")' for d in media3)
+          block = f'\ndependencies {{\n{lines}\n}}\n'
+          s = s[:ai] + block + s[ai:]
+          open(p, 'w').write(s)
+          print('media3 deps inserted')
+          PY
+          echo "--- media3 grep ---"
+          grep -n "media3" "$GRADLE" || true
+
+      # NOTE: Tauri v2 auto-registers @TauriPlugin classes at runtime; no
+      # MainActivity change is needed. The earlier `add(Plugin())` approach was
+      # wrong for v2 and has been removed.
 
       - name: Build debug APK
         run: npm run android:build:debug
