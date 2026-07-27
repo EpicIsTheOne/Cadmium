@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "../../shared/components/Icon";
 import type { NormalizedLibrary, TrackId } from "../../shared/domain/media";
+import { LibraryEmpty } from "../components/LibraryEmpty";
 
 type Segment = "songs" | "albums" | "artists" | "playlists";
 
@@ -10,6 +11,7 @@ export function LibraryScreen({
   onToggleFavorite,
   onPlayCollection,
   onRescan,
+  scanning,
   onNavigate,
 }: {
   library: NormalizedLibrary | null;
@@ -17,6 +19,7 @@ export function LibraryScreen({
   onToggleFavorite: (id: TrackId) => void;
   onPlayCollection: (ids: readonly TrackId[], startIndex?: number) => void;
   onRescan: () => void;
+  scanning: boolean;
   onNavigate: (tab: "home" | "search" | "library" | "settings") => void;
 }) {
   const [segment, setSegment] = useState<Segment>("songs");
@@ -27,9 +30,23 @@ export function LibraryScreen({
       <section className="mobile-section">
         <div className="library-head">
           <h1 className="section-title">Library</h1>
-          <button type="button" className="icon-button" aria-label="Rescan" onClick={onRescan}><Icon name="refresh" size={18} /></button>
+          <button type="button" className="icon-button" aria-label="Scan device" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
         </div>
-        <p className="muted">No library loaded.</p>
+        <LibraryEmpty library={library} onScan={onRescan} scanning={scanning} />
+      </section>
+    );
+  }
+
+  // On Android, music comes from the system MediaStore; an empty library
+  // means nothing has been scanned yet, not that the app is broken.
+  if (library.trackOrder.length === 0) {
+    return (
+      <section className="mobile-section">
+        <div className="library-head">
+          <h1 className="section-title">Library</h1>
+          <button type="button" className="icon-button" aria-label="Scan device" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
+        </div>
+        <LibraryEmpty library={library} onScan={onRescan} scanning={scanning} />
       </section>
     );
   }
@@ -38,7 +55,9 @@ export function LibraryScreen({
     <section className="mobile-section">
       <div className="library-head">
         <h1 className="section-title">Library</h1>
-        <button type="button" className="icon-button" aria-label="Rescan library" onClick={onRescan}><Icon name="refresh" size={18} /></button>
+        <div className="library-head-actions">
+          <button type="button" className="icon-button" aria-label="Scan device for music" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
+        </div>
       </div>
       <p className="library-summary">
         {library.trackOrder.length} tracks · {library.albumOrder.length} albums · {library.artistOrder.length} artists

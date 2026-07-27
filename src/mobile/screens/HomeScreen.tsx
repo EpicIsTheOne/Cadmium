@@ -8,6 +8,8 @@ export function HomeScreen({
   onToggleFavorite,
   onNavigate,
   onOpenNowPlaying,
+  onRescan,
+  scanning,
 }: {
   library: NormalizedLibrary | null;
   favoriteTrackIds: readonly TrackId[];
@@ -15,9 +17,33 @@ export function HomeScreen({
   onToggleFavorite: (id: TrackId) => void;
   onNavigate: (tab: "home" | "search" | "library" | "settings") => void;
   onOpenNowPlaying: () => void;
+  onRescan: () => void;
+  scanning: boolean;
 }) {
   if (!library) {
     return <section className="mobile-section"><p className="muted">Scanning your library…</p></section>;
+  }
+  if (library.trackOrder.length === 0) {
+    return (
+      <section className="mobile-section">
+        <header className="mobile-home-head">
+          <p className="mobile-home-eyebrow">Cadmium</p>
+          <h1 className="section-title">Your music.</h1>
+        </header>
+        <div className="mobile-empty panel-surface">
+          <div className="mobile-empty-art"><Icon name="music" size={40} /></div>
+          <h2 className="mobile-empty-title">No music here yet</h2>
+          <p className="mobile-empty-body">
+            Cadmium reads the audio already on this device through Android's
+            MediaStore. Scan to add your tracks, albums, and playlists.
+          </p>
+          <button type="button" className="primary-button" onClick={onRescan} disabled={scanning}>
+            <Icon name="refresh" size={18} />
+            {scanning ? "Scanning…" : "Scan device for music"}
+          </button>
+        </div>
+      </section>
+    );
   }
   const recent = library.recentTrackIds.slice(0, 8);
   const favorites = favoriteTrackIds.slice(0, 8);
@@ -29,8 +55,11 @@ export function HomeScreen({
 
   return (
     <section className="mobile-section">
-      <h1 className="section-title">Home</h1>
-      <p className="section-sub">Your music, ready when you are.</p>
+      <header className="mobile-home-head">
+        <p className="mobile-home-eyebrow">Cadmium</p>
+        <h1 className="section-title">Your music.</h1>
+        <p className="section-sub">Your phone, your library. Tap a card to play.</p>
+      </header>
       <Rail title="Recent plays" onMore={() => onNavigate("library")}>
         {recent.length === 0 && <p className="muted">No recent plays yet.</p>}
         {recent.map((id) => {

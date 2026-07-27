@@ -234,10 +234,13 @@ export class AndroidLibraryProvider implements MusicProvider {
   }
 
   async requestAddMusic() {
+    // Android has no folder picker: music arrives from the system
+    // MediaStore, so the real "add music" action is a rescan
+    // (see rescan()). The UI surfaces that as "Scan device".
     return {
       status: "unavailable" as const,
       message:
-        "Android imports your library automatically from MediaStore. Use Refresh to rescan.",
+        "Android reads music from your device's MediaStore. Use Scan device (Library tab) to refresh your library.",
     };
   }
 

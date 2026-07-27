@@ -374,6 +374,35 @@
 /* empty state tweaks */
 .mobile-shell .empty-state { margin: auto; max-width: 320px; }
 
+/* ---- shared Cadmium visual DNA (cohesion with desktop) ---- */
+.mobile-shell .mobile-home-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.mobile-shell .mobile-home-eyebrow {
+  margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--accent);
+}
+.mobile-shell .mobile-home-head .section-title { margin: 0; font-size: 30px; }
+.mobile-shell .mobile-home-head .section-sub { margin: 0; }
+
+.mobile-shell .library-head-actions { display: flex; gap: 6px; }
+
+/* cohesive empty card — glass surface + accent, mirrors desktop Cadmium */
+.mobile-shell .mobile-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 14px; padding: 32px 24px; border-radius: 22px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.mobile-shell .mobile-empty-art {
+  display: grid; place-items: center; width: 72px; height: 72px; border-radius: 20px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: 0 0 28px var(--accent-glow);
+}
+.mobile-shell .mobile-empty-title { margin: 0; font-size: 20px; color: var(--ink); }
+.mobile-shell .mobile-empty-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 30ch; }
+.mobile-shell .mobile-empty .primary-button { display: inline-flex; align-items: center; gap: 8px; width: auto; padding: 12px 20px; }
+
 @media (prefers-reduced-motion: reduce) {
   .mobile-shell .mobile-sheet { animation: none; }
   .mobile-shell .icon-button,

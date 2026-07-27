@@ -55,6 +55,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [scanning, setScanning] = useState(false);
 
   const [snapshot, setSnapshot] = useState<EnginePlaybackSnapshot | null>(null);
   const sheetDepth = (nowPlayingOpen ? 1 : 0) + (queueOpen ? 1 : 0);
@@ -70,12 +71,15 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
       setLibrary(null);
       return;
     }
+    setScanning(true);
     try {
       const next = await provider.getLibrary();
       setLibrary(next);
       setFavoriteTrackIds(await provider.getFavoriteTrackIds());
     } catch {
       setLibrary(null);
+    } finally {
+      setScanning(false);
     }
   }, [provider, permission]);
 
@@ -191,6 +195,8 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             onToggleFavorite={toggleFavorite}
             onNavigate={setTab}
             onOpenNowPlaying={() => setNowPlayingOpen(true)}
+            onRescan={loadLibrary}
+            scanning={scanning}
           />
         )}
         {tab === "search" && (
@@ -210,6 +216,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             onToggleFavorite={toggleFavorite}
             onPlayCollection={playFromList}
             onRescan={loadLibrary}
+            scanning={scanning}
             onNavigate={setTab}
           />
         )}
