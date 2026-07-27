@@ -104,11 +104,31 @@ const androidDescriptor = {
   },
 };
 
-function artwork(path: string | null | undefined, alt: string) {
-  return path ? { src: `android-asset://${path}`, alt } : undefined;
+function artwork(ref: string | null | undefined, alt: string, cache?: Map<string, string>) {
+  if (!ref) return undefined;
+  const src = cache ? (cache.get(ref) ?? ref) : ref;
+  return { src, alt };
 }
 
-function mapTrack(track: BackendTrack): Track {
+async function fetchArtworkCache(refs: string[]): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(refs.filter((r) => r && r.startsWith("content://"))));
+  if (unique.length === 0) return new Map();
+  try {
+    const response = await invoke<{ images: string[] }>("plugin:artworkbridge|getArtworks", {
+      uris: unique,
+    });
+    const cache = new Map<string, string>();
+    unique.forEach((ref, i) => {
+      const img = response.images[i];
+      if (img) cache.set(ref, img);
+    });
+    return cache;
+  } catch {
+    return new Map();
+  }
+}
+
+function mapTrack(track: BackendTrack, artCache?: Map<string, string>): Track {
   return {
     id: asTrackId(track.id),
     title: track.title,
@@ -120,7 +140,7 @@ function mapTrack(track: BackendTrack): Track {
     year: track.year ?? undefined,
     genre: track.genre ?? undefined,
     available: track.available,
-    artwork: artwork(track.artworkPath, track.title),
+    artwork: artwork(track.artworkPath, track.title, artCache),
     source: {
       kind: "local-file",
       locator: track.sourcePath,
@@ -134,10 +154,17 @@ export class AndroidLibraryProvider implements MusicProvider {
 
   async getLibrary(): Promise<NormalizedLibrary> {
     const backend = await invoke<BackendLibrary>("android_get_library");
+    const refs: string[] = [];
+    for (const raw of backend.tracks) if (raw.artworkPath) refs.push(raw.artworkPath);
+    for (const raw of backend.albums) if (raw.artworkPath) refs.push(raw.artworkPath);
+    for (const raw of backend.artists) if (raw.artworkPath) refs.push(raw.artworkPath);
+    for (const raw of backend.playlists) if (raw.artworkPath) refs.push(raw.artworkPath);
+    const artCache = await fetchArtworkCache(refs);
+
     const tracksById: Record<string, Track> = {};
     const trackOrder: TrackId[] = [];
     for (const raw of backend.tracks) {
-      const track = mapTrack(raw);
+      const track = mapTrack(raw, artCache);
       tracksById[track.id] = track;
       trackOrder.push(track.id);
     }
@@ -149,7 +176,7 @@ export class AndroidLibraryProvider implements MusicProvider {
         title: raw.title,
         artistIds: raw.artistIds.map(asArtistId),
         year: raw.year ?? undefined,
-        artwork: artwork(raw.artworkPath, raw.title),
+        artwork: artwork(raw.artworkPath, raw.title, artCache),
       };
       albumsById[album.id] = album;
       albumOrder.push(album.id);
@@ -160,7 +187,7 @@ export class AndroidLibraryProvider implements MusicProvider {
       const artist: Artist = {
         id: asArtistId(raw.id),
         name: raw.name,
-        artwork: artwork(raw.artworkPath, raw.name),
+        artwork: artwork(raw.artworkPath, raw.name, artCache),
       };
       artistsById[artist.id] = artist;
       artistOrder.push(artist.id);
@@ -173,7 +200,7 @@ export class AndroidLibraryProvider implements MusicProvider {
         name: raw.name,
         description: raw.description ?? undefined,
         trackIds: raw.trackIds.map(asTrackId),
-        artwork: artwork(raw.artworkPath, raw.name),
+        artwork: artwork(raw.artworkPath, raw.name, artCache),
       };
       playlistsById[playlist.id] = playlist;
       playlistOrder.push(playlist.id);

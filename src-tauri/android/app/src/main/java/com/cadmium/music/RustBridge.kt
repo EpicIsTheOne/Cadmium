@@ -95,10 +95,21 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
             val entry = items.getJSONObject(i)
             val locator = entry.optString("locator")
             val trackId = entry.optString("trackId")
+            val title = entry.optString("title")
+            val artist = entry.optString("artist")
+            val album = entry.optString("album")
+            val artworkUri = entry.optString("artworkUri")
+            val metadata = MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(artist)
+                .setAlbumTitle(album)
+                .setMediaId(trackId)
+            decodeArtwork(artworkUri)?.let { metadata.setArtworkData(it) }
             MediaItem.Builder()
                 .setUri(locator)
                 .setMediaId(trackId)
                 .setTag(trackId)
+                .setMediaMetadata(metadata.build())
                 .build()
         }
         withService { svc ->
@@ -163,6 +174,17 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
             svc.clear()
         }
         invoke.resolve(JSObject())
+    }
+
+    private fun decodeArtwork(artworkUri: String?): ByteArray? {
+        if (artworkUri.isNullOrBlank() || !artworkUri.startsWith("data:image")) return null
+        val comma = artworkUri.indexOf(',')
+        if (comma < 0) return null
+        return try {
+            android.util.Base64.decode(artworkUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        } catch (e: Throwable) {
+            null
+        }
     }
 
     companion object {

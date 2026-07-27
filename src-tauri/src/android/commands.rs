@@ -176,3 +176,14 @@ pub fn android_get_recent_track_ids(
         .get_recent_track_ids()
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+pub fn android_record_recent_play(
+    state: State<'_, AppState>,
+    track_id: String,
+    position_ms: u64,
+) -> Result<(), String> {
+    lock_repository(&state)?
+        .record_recent_play(&track_id, position_ms as i64)
+        .map_err(|error| error.to_string())
+}

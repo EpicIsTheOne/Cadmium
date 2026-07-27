@@ -70,7 +70,17 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
     }
   }
 
+  private lastRecordedTrackId: string | null = null;
+
   private applyNativeState(state: NativePlaybackState) {
+    if (state.currentTrackId && state.currentTrackId !== this.lastRecordedTrackId) {
+      this.lastRecordedTrackId = state.currentTrackId;
+      // Record "recent play" when the active track changes (incl. auto-advance).
+      void invoke("android_record_recent_play", {
+        trackId: state.currentTrackId,
+        positionMs: 0,
+      }).catch(() => {});
+    }
     this.snapshot = {
       currentTrackId: state.currentTrackId,
       positionMs: state.positionMs,
@@ -128,6 +138,12 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
 
   async play(): Promise<void> {
     await invoke("plugin:rustbridge|play");
+    if (this.snapshot.currentTrackId) {
+      void invoke("android_record_recent_play", {
+        trackId: this.snapshot.currentTrackId,
+        positionMs: 0,
+      }).catch(() => {});
+    }
   }
 
   async pause(): Promise<void> {
