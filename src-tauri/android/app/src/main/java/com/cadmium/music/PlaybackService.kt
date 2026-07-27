@@ -56,6 +56,15 @@ class PlaybackService : MediaSessionService(), Player.Listener {
         return mediaSession
     }
 
+    /** Binder so the RustBridge plugin can drive this service in-process. */
+    inner class LocalBinder : android.os.Binder() {
+        fun getService(): PlaybackService = this@PlaybackService
+    }
+
+    override fun onBind(intent: Intent?): android.os.IBinder {
+        return LocalBinder()
+    }
+
     /** Replace the queue with the renderer-computed list and start at index. */
     fun setQueue(items: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
         player?.setMediaItems(items, startIndex, startPositionMs)
@@ -66,12 +75,14 @@ class PlaybackService : MediaSessionService(), Player.Listener {
 
     fun play() { player?.play(); pushState() }
     fun pause() { player?.pause(); pushState() }
+    fun toggle() { player?.let { if (it.isPlaying) it.pause() else it.play() }; pushState() }
     fun next() { player?.seekToNextMediaItem(); pushState() }
     fun previous() { player?.seekToPreviousMediaItem(); pushState() }
     fun seek(ms: Long) { player?.seekTo(ms); pushState() }
     fun setVolume(v: Float) { player?.volume = v; pushState() }
     fun setRepeat(mode: Int) { player?.repeatMode = mode; pushState() }
     fun setShuffle(on: Boolean) { player?.shuffleModeEnabled = on; pushState() }
+    fun clear() { player?.clearMediaItems(); pushState() }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
         pushState()

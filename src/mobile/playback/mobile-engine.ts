@@ -119,7 +119,7 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
       collectionId: item.collectionId ?? null,
       collectionTitle: item.collectionTitle ?? null,
     }));
-    await invoke("android_set_queue", {
+    await invoke("plugin:rustbridge|setQueue", {
       items,
       startIndex: input.startIndex,
       autoplay: input.autoplay,
@@ -127,39 +127,39 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
   }
 
   async play(): Promise<void> {
-    await invoke("android_play");
+    await invoke("plugin:rustbridge|play");
   }
 
   async pause(): Promise<void> {
-    await invoke("android_pause");
+    await invoke("plugin:rustbridge|pause");
   }
 
   async seekTo(positionMs: number): Promise<void> {
-    await invoke("android_seek_to", { positionMs: Math.max(0, Math.round(positionMs)) });
+    await invoke("plugin:rustbridge|seek", { positionMs: Math.max(0, Math.round(positionMs)) });
   }
 
   async next(): Promise<void> {
-    await invoke("android_next");
+    await invoke("plugin:rustbridge|next");
   }
 
   async previous(): Promise<void> {
-    await invoke("android_previous");
+    await invoke("plugin:rustbridge|previous");
   }
 
   async setShuffle(enabled: boolean): Promise<void> {
-    await invoke("android_set_shuffle", { enabled });
+    await invoke("plugin:rustbridge|setShuffle", { enabled });
   }
 
   async setRepeatMode(mode: RepeatMode): Promise<void> {
-    await invoke("android_set_repeat_mode", { mode });
+    await invoke("plugin:rustbridge|setRepeatMode", { mode });
   }
 
   async setVolume(volume: number): Promise<void> {
     const next = clampVolume(volume);
-    await invoke("android_set_volume", { volume: next });
+    await invoke("plugin:rustbridge|setVolume", { volume: next });
   }
 
   async clearQueue(): Promise<void> {
-    await invoke("android_clear_queue");
+    await invoke("plugin:rustbridge|clearQueue");
   }
 }
