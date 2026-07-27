@@ -53,7 +53,7 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
             val payload = JSObject()
             for ((key, value) in state) {
                 when (value) {
-                    null -> payload.put(key, JSObject.NULL)
+                    null -> payload.put(key, org.json.JSONObject.NULL)
                     is Boolean -> payload.put(key, value)
                     is Int -> payload.put(key, value)
                     is Long -> payload.put(key, value)
