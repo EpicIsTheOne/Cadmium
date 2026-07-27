@@ -119,24 +119,56 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   }, [loadLibrary]);
 
   const requestPermission = useCallback(async () => {
+    // The native PermissionBridge injects window.__CADMIUM_ANDROID__ from its
+    // load() hook. If the gate renders before that injection lands, calling
+    // the bridge would be undefined — treat that as "not ready", never as
+    // granted, or the OS prompt is skipped and MediaStore silently returns
+    // nothing. Poll briefly for the global, then call the real native flow.
+    const getBridge = () =>
+      (window as unknown as { __CADMIUM_ANDROID__?: {
+        requestAudioPermission: () => Promise<{ granted: boolean; shouldShowRationale: boolean }>;
+        openAppSettings: () => void;
+      } }).__CADMIUM_ANDROID__;
+
+    let bridge = getBridge();
+    for (let i = 0; i < 20 && !bridge; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      bridge = getBridge();
+    }
+
+    if (!bridge) {
+      // Native bridge never appeared — don't fabricate a grant.
+      setPermission("denied");
+      return;
+    }
+
     try {
-      const status = await (window as unknown as {
-        __CADMIUM_ANDROID__?: {
-          requestAudioPermission: () => Promise<{
-            granted: boolean;
-            shouldShowRationale: boolean;
-          }>;
-        };
-      }).__CADMIUM_ANDROID__?.requestAudioPermission();
+      const status = await bridge.requestAudioPermission();
       const decision = status
         ? resolvePermissionStatus(status)
-        : { state: "granted" as PermissionState, canOpenSettings: false };
+        : { state: "denied" as PermissionState, canOpenSettings: true };
       setPermission(decision.state);
       if (decision.state === "granted") void loadLibrary();
     } catch {
       setPermission("denied");
     }
   }, [loadLibrary]);
+
+  // First launch: actually surface the OS permission prompt instead of waiting
+  // for the user to find the gate. Only does this when the status is still
+  // unknown (not yet granted, not yet denied).
+  useEffect(() => {
+    if (preview) return;
+    if (permission !== "unknown") return;
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      if (!cancelled) void requestPermission();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [preview, permission, requestPermission]);
 
   // Android system Back closes sheets first, then exits the app.
   useEffect(() => {
