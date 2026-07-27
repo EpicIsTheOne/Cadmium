@@ -83,6 +83,33 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
     }
   }, [provider, permission]);
 
+  const rescan = useCallback(async () => {
+    if (permission !== "granted") {
+      setLibrary(null);
+      return;
+    }
+    setScanning(true);
+    try {
+      // This is the REAL import: query MediaStore and write the
+      // normalized library (android_reconcile_media). getLibrary() alone
+      // only reads what was already persisted, so calling it from the
+      // Scan button would never pick up new tracks.
+      const next = await provider.rescan();
+      setLibrary(next);
+      setFavoriteTrackIds(await provider.getFavoriteTrackIds());
+    } catch {
+      // Scan failed (e.g. MediaStore empty / permission revoked);
+      // fall back to whatever is persisted.
+      try {
+        setLibrary(await provider.getLibrary());
+      } catch {
+        setLibrary(null);
+      }
+    } finally {
+      setScanning(false);
+    }
+  }, [provider, permission]);
+
   useEffect(() => {
     void loadLibrary();
   }, [loadLibrary]);
@@ -195,7 +222,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             onToggleFavorite={toggleFavorite}
             onNavigate={setTab}
             onOpenNowPlaying={() => setNowPlayingOpen(true)}
-            onRescan={loadLibrary}
+            onRescan={rescan}
             scanning={scanning}
           />
         )}
@@ -215,7 +242,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             favoriteTrackIds={favoriteTrackIds}
             onToggleFavorite={toggleFavorite}
             onPlayCollection={playFromList}
-            onRescan={loadLibrary}
+            onRescan={rescan}
             scanning={scanning}
             onNavigate={setTab}
           />

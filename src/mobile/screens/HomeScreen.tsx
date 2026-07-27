@@ -45,23 +45,46 @@ export function HomeScreen({
       </section>
     );
   }
-  const recent = library.recentTrackIds.slice(0, 8);
-  const favorites = favoriteTrackIds.slice(0, 8);
   const recentAlbums = library.albumOrder.slice(0, 8).map((id) => library.albumsById[id]);
   const playlists = library.playlistOrder.slice(0, 6).map((id) => library.playlistsById[id]);
+
+  const recent = library.recentTrackIds.slice(0, 8);
+  const favorites = favoriteTrackIds.slice(0, 8);
+
+  const featured = (library.recentTrackIds.map((id) => library.tracksById[id]).find((t) => t?.available)) ?? library.trackOrder.map((id) => library.tracksById[id]).find((t) => t?.available);
+  const heroArt = featured?.artwork?.src;
+  const heroTitle = featured ? featured.title : "Your music.";
+  const heroArtist = featured ? featured.artistIds.map((a) => library.artistsById[a]?.name ?? "").join(", ") : "Your phone.";
 
   const albumTrackIds = (albumId: string): TrackId[] =>
     library.trackOrder.filter((id) => library.tracksById[id]?.albumId === albumId && library.tracksById[id]?.available);
 
   return (
     <section className="mobile-section">
-      <header className="mobile-home-head">
-        <p className="mobile-home-eyebrow">Cadmium</p>
-        <h1 className="section-title">Your music.</h1>
-        <p className="section-sub">Your phone, your library. Tap a card to play.</p>
-      </header>
+      <section
+        className={`feature-hero ${heroArt ? "" : "feature-hero-empty"}`}
+        style={heroArt ? { backgroundImage: `linear-gradient(180deg, rgba(11,14,26,.35), rgba(8,10,20,.92)), url(${heroArt})` } : undefined}
+      >
+        <div className="feature-copy">
+          <p className="mobile-home-eyebrow"><Icon name="spark" size={12} />CADMIUM · YOUR PHONE</p>
+          <h1 className="section-title">{heroTitle}</h1>
+          <p className="section-sub">{heroArtist}</p>
+          <div className="hero-actions">
+            {featured ? (
+              <button type="button" className="primary-button" onClick={() => onPlayCollection([featured.id])}>
+                <Icon name="play" size={15} />Play
+              </button>
+            ) : (
+              <button type="button" className="primary-button" onClick={onRescan} disabled={scanning}>
+                <Icon name="refresh" size={15} />{scanning ? "Scanning…" : "Scan device for music"}
+              </button>
+            )}
+            <button type="button" className="hero-more" onClick={() => onNavigate("library")}>···</button>
+          </div>
+        </div>
+      </section>
+
       <Rail title="Recent plays" onMore={() => onNavigate("library")}>
-        {recent.length === 0 && <p className="muted">No recent plays yet.</p>}
         {recent.map((id) => {
           const track = library.tracksById[id];
           if (!track) return null;
