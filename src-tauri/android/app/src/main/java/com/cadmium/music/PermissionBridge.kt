@@ -5,9 +5,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
@@ -22,15 +25,20 @@ import app.tauri.plugin.Plugin
  * Cadmium is read-only toward source audio and must never request
  * MANAGE_EXTERNAL_STORAGE. MediaStore access on Android 13+ uses the scoped
  * READ_MEDIA_AUDIO permission; on older versions we fall back to the broad
- * READ_EXTERNAL_STORAGE. The bridge injects a small `window.__CADMIUM_ANDROID__`
- * global that the renderer calls, and this plugin answers it. The runtime
- * permission prompt uses the AndroidX Activity Result API (registerForActivityResult),
- * which requires the host activity to be a ComponentActivity (TauriActivity is).
+ * READ_EXTERNAL_STORAGE.
+ *
+ * The permission prompt uses the AndroidX Activity Result API. registerForActivityResult
+ * is only valid during the activity's initialization window, so we register it in
+ * load() and always invoke launch() on the main thread. If launch() cannot show the
+ * system dialog (launcher unavailable, or it throws), we never leave the JS promise
+ * hanging: we resolve a real denial and, where possible, route the user to system
+ * settings so they can grant manually.
  */
 @TauriPlugin
 class PermissionBridge(private val activity: Activity) : Plugin(activity) {
-    private var launcher: androidx.activity.result.ActivityResultLauncher<String>? = null
+    private var launcher: ActivityResultLauncher<String>? = null
     private var pendingInvoke: Invoke? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun load(webView: WebView) {
         if (activity is ComponentActivity) {
@@ -73,10 +81,20 @@ class PermissionBridge(private val activity: Activity) : Plugin(activity) {
             }
             launcher != null -> {
                 pendingInvoke = invoke
-                launcher!!.launch(permission)
+                // launch() MUST run on the main thread; if the activity result
+                // machinery can't show the dialog it throws — resolve a real
+                // denial instead of hanging the JS promise forever.
+                mainHandler.post {
+                    try {
+                        launcher!!.launch(permission)
+                    } catch (e: Exception) {
+                        pendingInvoke = null
+                        invoke.resolve(permissionResult(granted = false, shouldShowRationale = false))
+                    }
+                }
             }
             else -> {
-                // Host is not a ComponentActivity; report denied rather than crash.
+                // Host is not a ComponentActivity; report denied (settings fallback).
                 invoke.resolve(permissionResult(granted = false, shouldShowRationale = false))
             }
         }

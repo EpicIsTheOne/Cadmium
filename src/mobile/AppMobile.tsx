@@ -170,6 +170,23 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
     };
   }, [preview, permission, requestPermission]);
 
+  // Re-check permission when the app regains focus (e.g. the user returns
+  // from system settings after granting there). Without this, a manual grant
+  // in settings would never be reflected and the shell would stay gated.
+  useEffect(() => {
+    if (preview) return;
+    const recheck = () => {
+      if (permission !== "granted") void requestPermission();
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") recheck(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", recheck);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", recheck);
+    };
+  }, [preview, permission, requestPermission]);
+
   // Android system Back closes sheets first, then exits the app.
   useEffect(() => {
     const onBack = (event: Event) => {
