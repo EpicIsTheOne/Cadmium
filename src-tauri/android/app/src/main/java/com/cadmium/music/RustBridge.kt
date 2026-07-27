@@ -104,7 +104,6 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
-                .setMediaId(trackId)
             decodeArtwork(artworkUri)?.let { metadata.setArtworkData(it) }
             MediaItem.Builder()
                 .setUri(locator)
