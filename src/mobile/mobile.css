@@ -843,6 +843,57 @@
 }
 
 /* ==========================================================================
+   v12.1 polish — collapsing collection header, Now Playing extras, transitions
+   ========================================================================== */
+.mobile-shell .collection-sentinel { position:absolute; top:72px; left:0; width:1px; height:1px; }
+.mobile-shell .collection-view { position:relative; scroll-behavior:smooth; }
+.mobile-shell .collection-topbar {
+  position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:6px;
+  padding:12px 14px; min-height:56px;
+  background:linear-gradient(180deg,var(--collection-color,#3a2a24) 0%, color-mix(in srgb,var(--collection-color,#3a2a24) 72%, #121212) 100%);
+  opacity:0; transform:translateY(-6px); pointer-events:none; transition:opacity .25s ease, transform .25s ease;
+}
+.mobile-shell .collection-topbar-title { flex:1; min-width:0; text-align:center; font-weight:800; font-size:16px; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#fff; }
+.mobile-shell .collection-topbar .icon-button { color:#fff; width:38px; height:38px; background:transparent; }
+.mobile-shell .play-button-sm { display:grid; place-items:center; width:34px; height:34px; border:0; border-radius:50%; color:#111; background:var(--accent); }
+.mobile-shell .collection-view.is-collapsed .collection-topbar { opacity:1; transform:translateY(0); pointer-events:auto; }
+.mobile-shell .collection-view.is-collapsed .collection-back { opacity:0; pointer-events:none; }
+.mobile-shell .collection-view.is-collapsed .collection-hero { opacity:.32; transform:scale(.97); }
+.mobile-shell .collection-hero { transition:opacity .2s ease, transform .2s ease; }
+
+/* Now Playing extras */
+.mobile-shell .now-playing-art { display:block; width:100%; padding:0; border:0; background:transparent; cursor:pointer; }
+.mobile-shell .now-playing-meta { display:flex; align-items:center; gap:12px; }
+.mobile-shell .np-meta-text { flex:1; min-width:0; }
+.mobile-shell .np-meta-text h2 { font-weight:800; letter-spacing:-.02em; }
+.mobile-shell .np-upnext { margin-top:6px; padding:10px 0 0; border-top:1px solid rgba(255,255,255,.08); }
+.mobile-shell .np-upnext-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.mobile-shell .np-upnext-head span { font-size:13px; font-weight:800; color:#fff; }
+.mobile-shell .np-upnext-open { border:0; background:transparent; color:#b3b3b3; font-size:12px; font-weight:700; }
+.mobile-shell .np-upnext-row { display:flex; align-items:center; gap:10px; padding:6px 0; }
+.mobile-shell .np-upnext-row img,.mobile-shell .np-upnext-fallback { width:38px; height:38px; border-radius:3px; object-fit:cover; background:#2a2a2a; display:grid; place-items:center; }
+.mobile-shell .np-upnext-row img { box-shadow:none; }
+.mobile-shell .np-upnext-meta { display:flex; flex-direction:column; min-width:0; }
+.mobile-shell .np-upnext-title { font-size:13px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mobile-shell .np-upnext-sub { font-size:11px; color:#a7a7a7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mobile-shell .np-lyrics { flex:1; display:grid; place-items:center; padding:30px 8px; }
+.mobile-shell .np-lyrics-empty { color:#a7a7a7; font-size:13px; text-align:center; line-height:1.5; }
+
+/* Smooth tab + player transitions */
+.mobile-shell .mobile-section { animation: np-fade .28s ease; }
+.mobile-shell .now-playing { animation: np-rise .32s cubic-bezier(.2,.7,.2,1); }
+.mobile-shell .mobile-tab { transition: color .18s ease; }
+.mobile-shell .mobile-tab svg { transition: transform .18s ease; }
+.mobile-shell .mobile-tab:active svg { transform: scale(.86); }
+.mobile-shell .collection-topbar .icon-button,.mobile-shell .play-button-sm { transition: transform .15s ease; }
+.mobile-shell .collection-topbar .icon-button:active,.mobile-shell .play-button-sm:active { transform: scale(.9); }
+@keyframes np-fade { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+@keyframes np-rise { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-shell .mobile-section,.mobile-shell .now-playing { animation:none; }
+}
+
+/* ==========================================================================
    Literal Spotify-reference pass — flat, dense, content-led, deliberately plain
    ========================================================================== */
 .app-shell.mobile-shell {

@@ -1,7 +1,49 @@
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../shared/components/Icon";
 import type { NormalizedLibrary, TrackId, PlaylistId, AlbumId } from "../../shared/domain/media";
 
 type Kind = "album" | "playlist";
+
+/** Sample a cover image for an average color, used to tint the header gradient.
+ *  Wrapped in try/catch so a tainted canvas (CORS) or missing art never breaks the view. */
+function useDominantColor(src?: string): string | null {
+  const [color, setColor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!src) {
+      setColor(null);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = 16;
+        c.height = 16;
+        const ctx = c.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, 16, 16);
+        const data = ctx.getImageData(0, 0, 16, 16).data;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let n = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          n += 1;
+        }
+        setColor(`rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`);
+      } catch {
+        /* tainted canvas — keep the default gradient */
+      }
+    };
+    img.onerror = () => setColor(null);
+    img.src = src;
+  }, [src]);
+  return color;
+}
 
 export function CollectionView({
   kind,
@@ -44,8 +86,39 @@ export function CollectionView({
     .map((tid) => library.tracksById[tid])
     .filter((t): t is NonNullable<typeof t> => t != null);
 
+  const dominant = useDominantColor(art);
+  const sentinelRef = useRef<HTMLSpanElement | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const root = (el.closest(".mobile-content") as HTMLElement | null) ?? undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => setCollapsed(!entry.isIntersecting),
+      { root, rootMargin: "-72px 0px 0px 0px", threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   return (
-    <section className="mobile-section collection-view">
+    <section
+      className={`mobile-section collection-view ${collapsed ? "is-collapsed" : ""}`}
+      style={{ ["--collection-color" as string]: dominant ?? undefined } as React.CSSProperties}
+    >
+      <span ref={sentinelRef} className="collection-sentinel" aria-hidden="true" />
+
+      <div className="collection-topbar">
+        <button type="button" className="icon-button" aria-label="Back" onClick={onBack}>
+          <Icon name="chevron-right" size={20} style={{ transform: "rotate(180deg)" }} />
+        </button>
+        <span className="collection-topbar-title">{title}</span>
+        <button type="button" className="play-button-sm" aria-label="Play" onClick={() => onPlayCollection(trackIds)}>
+          <Icon name="play" size={18} />
+        </button>
+      </div>
+
       <button type="button" className="icon-button collection-back" aria-label="Back" onClick={onBack}>
         <Icon name="chevron-right" size={20} style={{ transform: "rotate(180deg)" }} />
       </button>
