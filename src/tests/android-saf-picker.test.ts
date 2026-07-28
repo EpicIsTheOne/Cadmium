@@ -40,6 +40,10 @@ describe("Android SAF picker wiring", () => {
     expect(kotlin).toContain('startActivityForResult(invoke, intent, "pickAudioResult")');
     expect(kotlin).toContain("@ActivityCallback");
     expect(kotlin).toContain("takePersistableUriPermission");
+    expect(kotlin).toContain("candidatesJson");
+    expect(kotlin).toContain("JSONArray()");
+    expect(kotlin).toContain("JSONObject.NULL");
+    expect(kotlin).not.toContain("candidates.toTypedArray()");
     expect(kotlin).not.toContain("override fun onActivityResult");
     expect(kotlin).not.toContain("Manifest.permission.MANAGE_EXTERNAL_STORAGE");
   });

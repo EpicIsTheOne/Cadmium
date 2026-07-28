@@ -17,6 +17,8 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import app.tauri.plugin.Invoke
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,7 +45,7 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
         scope.launch {
             val candidates = withContext(Dispatchers.IO) { query() }
             val result = JSObject()
-            result.put("candidates", candidates.toTypedArray())
+            result.put("candidates", candidatesJson(candidates))
             invoke.resolve(result)
         }
     }
@@ -110,6 +112,18 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
         return list
     }
 
+    private fun candidatesJson(candidates: List<Map<String, Any?>>): JSONArray {
+        val array = JSONArray()
+        candidates.forEach { candidate ->
+            val row = JSONObject()
+            candidate.forEach { (key, value) ->
+                row.put(key, value ?: JSONObject.NULL)
+            }
+            array.put(row)
+        }
+        return array
+    }
+
     // ── Storage Access Framework picker ──────────────────────────────────────
     //
     // Launches ACTION_OPEN_DOCUMENT with EXTRA_ALLOW_MULTIPLE so the user can
@@ -148,7 +162,7 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
         // Cancellation: the user dismissed the picker with no selection.
         if (result.resultCode != Activity.RESULT_OK || data == null) {
             val result = JSObject()
-            result.put("candidates", emptyArray<Any>())
+            result.put("candidates", JSONArray())
             result.put("cancelled", true)
             invoke.resolve(result)
             return
@@ -162,7 +176,7 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
                     uris.map { readDocumentMetadata(it) }
                 }
                 val callResult = JSObject()
-                callResult.put("candidates", candidates.toTypedArray())
+                callResult.put("candidates", candidatesJson(candidates))
                 callResult.put("cancelled", false)
                 invoke.resolve(callResult)
             } catch (error: Throwable) {

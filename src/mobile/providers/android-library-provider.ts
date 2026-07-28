@@ -286,9 +286,9 @@ export class AndroidLibraryProvider implements MusicProvider {
     } catch (error) {
       return {
         status: "unavailable",
-        message: `Could not open the file picker: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        message: `Could not import selected files: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
       };
     }
   }
