@@ -20,6 +20,7 @@ export function MiniPlayer({
   const track = snapshot.currentTrackId ? library?.tracksById[snapshot.currentTrackId as TrackId] : null;
   if (!track) return null;
   const favorite = favoriteTrackIds.includes(track.id);
+  const progress = snapshot.durationMs > 0 ? Math.min(100, (snapshot.positionMs / snapshot.durationMs) * 100) : 0;
   return (
     <div className={`mobile-mini-player ${snapshot.isPlaying ? "is-playing" : ""}`} onClick={onOpenNowPlaying} role="button" aria-label="Open now playing">
       {track.artwork ? (
@@ -47,6 +48,7 @@ export function MiniPlayer({
       <button type="button" className="icon-button" aria-label={snapshot.isPlaying ? "Pause" : "Play"} onClick={(event) => { event.stopPropagation(); onTogglePlay(); }}>
         <Icon name={snapshot.isPlaying ? "pause" : "play"} size={20} />
       </button>
+      <span className="mini-progress" aria-hidden="true"><span style={{ width: `${progress}%` }} /></span>
     </div>
   );
 }

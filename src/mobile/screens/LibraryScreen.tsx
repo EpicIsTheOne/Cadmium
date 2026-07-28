@@ -59,12 +59,14 @@ export function LibraryScreen({
   return (
     <section className="mobile-section">
       <div className="library-head">
-        <h1 className="section-title">Your Library</h1>
+        <div><p className="mobile-home-eyebrow">Your collection</p><h1 className="section-title">Your Library</h1><p className="library-summary">{library.trackOrder.length} songs · stored on this device</p></div>
         <div className="library-head-actions">
           <button type="button" className="icon-button" aria-label="Scan device for music" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
           <button type="button" className="icon-button" aria-label="Create playlist" onClick={onCreatePlaylist}><Icon name="plus" size={18} /></button>
         </div>
       </div>
+
+      <div className="library-sort"><button type="button"><Icon name="menu" size={15} /> Recents</button><button type="button" aria-label="Grid view"><Icon name="library" size={17} /></button></div>
 
       <div className="segment-tabs" role="tablist">
         {(["songs", "albums", "artists", "playlists"] as Segment[]).map((seg) => (

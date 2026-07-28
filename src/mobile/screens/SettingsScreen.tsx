@@ -71,7 +71,10 @@ export function SettingsScreen({
 
   return (
     <section className="mobile-section">
-      <h1 className="section-title">Settings</h1>
+      <header className="settings-mobile-hero">
+        <div className="settings-avatar">C</div>
+        <div><p className="mobile-home-eyebrow">Cadmium Android</p><h1 className="section-title">Settings</h1><p>Local-first music, tuned your way.</p></div>
+      </header>
 
       <div className="settings-group">
         <h2>Library</h2>

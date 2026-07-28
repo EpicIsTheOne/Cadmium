@@ -45,7 +45,7 @@ export function SearchScreen({
 
   return (
     <section className="mobile-section">
-      <h1 className="section-title">Search</h1>
+      <header className="search-head"><p className="mobile-home-eyebrow">Find your sound</p><h1 className="section-title">Search</h1></header>
       <div className="search-field">
         <Icon name="search" size={18} />
         <input
@@ -59,6 +59,7 @@ export function SearchScreen({
 
       {!q && (
         <>
+          <h2 className="browse-title">Browse all</h2>
           <div className="cat-grid">
             {CATEGORIES.map((cat) => (
               <button type="button" key={cat.key} className={`cat-tile ${cat.cls}`}>

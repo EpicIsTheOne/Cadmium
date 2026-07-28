@@ -20,7 +20,7 @@ export function QueueSheet({
     <div className="mobile-sheet queue-sheet" role="dialog" aria-label="Queue">
       <div className="sheet-grabber" onClick={onClose} />
       <button type="button" className="sheet-close" onClick={onClose} aria-label="Close"><Icon name="close" size={18} /></button>
-      <h2 className="sheet-title">Up next</h2>
+      <div className="queue-heading"><span>Queue</span><h2 className="sheet-title">Up next</h2><p>From your current session</p></div>
       <ul className="queue-list">
         {items.length === 0 && <li className="muted">Queue is empty.</li>}
         {items.map((item, index) => {
@@ -30,7 +30,8 @@ export function QueueSheet({
             <li key={item.id} className={`queue-row ${current ? "is-current" : ""}`}>
               <button type="button" className="queue-jump" onClick={() => onJump(index)}>
                 <span className="queue-index">{current ? <Icon name="play" size={14} /> : index + 1}</span>
-                <span className="queue-title">{track?.title ?? item.title}</span>
+                {track?.artwork?.src ? <img className="queue-art" src={track.artwork.src} alt="" /> : <span className="queue-art art-fallback"><Icon name="music" size={13} /></span>}
+                <span className="queue-copy"><span className="queue-title">{track?.title ?? item.title}</span><span className="queue-sub">{track?.artistIds.map((id) => library?.artistsById[id]?.name ?? "").join(", ") || item.artist}</span></span>
               </button>
               <button type="button" className="icon-button" aria-label="Remove from queue" onClick={() => onRemove(item.id)}><Icon name="close" size={15} /></button>
             </li>

@@ -57,18 +57,41 @@ export function HomeScreen({
   const heroArt = featured?.artwork?.src;
   const heroTitle = featured ? featured.title : "Your music.";
   const heroArtist = featured ? featured.artistIds.map((a) => library.artistsById[a]?.name ?? "").join(", ") : "Your phone.";
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const quickPicks = library.recentTrackIds.slice(0, 6).map((id) => library.tracksById[id]).filter(Boolean);
 
   const albumTrackIds = (albumId: string): TrackId[] =>
     library.trackOrder.filter((id) => library.tracksById[id]?.albumId === albumId && library.tracksById[id]?.available);
 
   return (
     <section className="mobile-section">
+      <header className="mobile-topline">
+        <div>
+          <p className="mobile-home-eyebrow">Cadmium</p>
+          <h1 className="section-title">{greeting}</h1>
+        </div>
+        <button type="button" className="topline-action" aria-label="Scan device" onClick={onRescan} disabled={scanning}>
+          <Icon name="refresh" size={19} />
+        </button>
+      </header>
+
+      <div className="home-quick-grid">
+        {quickPicks.map((track) => (
+          <button type="button" className="home-quick" key={track.id} onClick={() => onPlayCollection([track.id])}>
+            {track.artwork?.src ? <img src={track.artwork.src} alt="" /> : <span className="home-quick-art"><Icon name="music" size={16} /></span>}
+            <span>{track.title}</span>
+          </button>
+        ))}
+      </div>
+
       <section
         className={`feature-hero ${heroArt ? "" : "feature-hero-empty"}`}
         style={heroArt ? { backgroundImage: `linear-gradient(180deg, rgba(11,14,26,.35), rgba(8,10,20,.92)), url(${heroArt})` } : undefined}
       >
+        {heroArt && <img className="feature-hero-art" src={heroArt} alt="" />}
         <div className="feature-copy">
-          <p className="mobile-home-eyebrow"><Icon name="spark" size={12} />CADMIUM · YOUR PHONE</p>
+          <p className="mobile-home-eyebrow"><Icon name="spark" size={12} />Made for this moment</p>
           <h1 className="section-title">{heroTitle}</h1>
           <p className="section-sub">{heroArtist}</p>
           <div className="hero-actions">
@@ -160,10 +183,13 @@ function TrackCard({ title, subtitle, artwork, favorite, onPlay, onFavorite }: {
   return (
     <div className="track-card">
       <button type="button" className="track-play" onClick={onPlay}>
-        {artwork ? <img src={artwork} alt={title} /> : <div className="art-fallback"><Icon name="music" size={18} /></div>}
+        <span className="track-art-wrap">
+          {artwork ? <img src={artwork} alt={title} /> : <span className="art-fallback"><Icon name="music" size={24} /></span>}
+          <span className="track-play-fab"><Icon name="play" size={18} /></span>
+        </span>
         <span className="track-meta"><span className="track-title">{title}</span><span className="track-sub">{subtitle}</span></span>
       </button>
-      <button type="button" className={`icon-button ${favorite ? "is-active" : ""}`} aria-label="Favorite" onClick={onFavorite}><Icon name="heart" size={16} /></button>
+      <button type="button" className={`track-favorite ${favorite ? "is-active" : ""}`} aria-label="Favorite" onClick={onFavorite}><Icon name="heart" size={16} /></button>
     </div>
   );
 }

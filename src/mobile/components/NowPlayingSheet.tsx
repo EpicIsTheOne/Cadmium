@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Icon } from "../../shared/components/Icon";
 import type { EnginePlaybackSnapshot, RepeatMode } from "../../shared/playback/engine";
 import type { NormalizedLibrary, TrackId } from "../../shared/domain/media";
@@ -52,8 +53,17 @@ export function NowPlayingSheet({
   const duration = snapshot.durationMs || track.durationMs;
 
   return (
-    <div className="mobile-sheet now-playing" role="dialog" aria-label="Now playing">
-      <div className="sheet-grabber" onClick={onClose} />
+    <div
+      className="mobile-sheet now-playing"
+      role="dialog"
+      aria-label="Now playing"
+      style={{ "--np-art": track.artwork ? `url(${track.artwork.src})` : "none" } as CSSProperties}
+    >
+      <div className="np-topline">
+        <button type="button" className="np-collapse" onClick={onClose} aria-label="Collapse player"><Icon name="close" size={18} /></button>
+        <div><span>Playing from</span><strong>{track.albumId ? library?.albumsById[track.albumId]?.title : "Your Library"}</strong></div>
+        <button type="button" className="np-menu" aria-label="More options">•••</button>
+      </div>
       <button type="button" className="sheet-close" onClick={onClose} aria-label="Close"><Icon name="close" size={18} /></button>
 
       <div className={`now-playing-art ${rhythmActive ? "rhythm-on" : ""}`}>
