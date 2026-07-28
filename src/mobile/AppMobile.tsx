@@ -27,6 +27,7 @@ import {
 import { DEFAULT_MOBILE_RHYTHM, shouldRenderRhythm } from "./rhythm";
 import type { NormalizedLibrary, TrackId, PlaylistId } from "../shared/domain/media";
 import type { EnginePlaybackSnapshot } from "../shared/playback/engine";
+import type { AndroidAddMusicResult } from "./mediastore";
 import { MiniPlayer } from "./components/MiniPlayer";
 import { NowPlayingSheet } from "./components/NowPlayingSheet";
 import { QueueSheet } from "./components/QueueSheet";
@@ -63,6 +64,9 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+  const [importResultKind, setImportResultKind] = useState<"success" | "cancelled" | "error" | null>(null);
   const [view, setView] = useState<CollectionViewState>(null);
 
   const [snapshot, setSnapshot] = useState<EnginePlaybackSnapshot | null>(null);
@@ -115,6 +119,40 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
       }
     } finally {
       setScanning(false);
+    }
+  }, [provider, permission]);
+
+  const importMusic = useCallback(async () => {
+    if (permission !== "granted") return;
+    // In preview mode the provider has no real picker; guard so the build and
+    // preview stay honest (no fake success).
+    const picker = provider as { pickAudioFiles?: () => Promise<AndroidAddMusicResult> };
+    if (typeof picker.pickAudioFiles !== "function") return;
+    setImporting(true);
+    setImportResult(null);
+    setImportResultKind(null);
+    try {
+      const result = await picker.pickAudioFiles();
+      if (result.status === "success") {
+        setImportResult(result.message);
+        setImportResultKind("success");
+        const next = await provider.getLibrary();
+        setLibrary(next);
+        setFavoriteTrackIds(await provider.getFavoriteTrackIds());
+      } else if (result.status === "cancelled") {
+        setImportResult(result.message);
+        setImportResultKind("cancelled");
+      } else {
+        setImportResult(result.message);
+        setImportResultKind("error");
+      }
+    } catch (error) {
+      setImportResult(
+        `Could not import files: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      setImportResultKind("error");
+    } finally {
+      setImporting(false);
     }
   }, [provider, permission]);
 
@@ -332,6 +370,10 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
             scanning={scanning}
             onNavigate={setTab}
             onCreatePlaylist={() => createPlaylist()}
+            onImportMusic={importMusic}
+            importing={importing}
+            importResult={importResult}
+            importResultKind={importResultKind}
             onOpenCollection={(kind, id) => setView({ kind, id })}
           />
         )}

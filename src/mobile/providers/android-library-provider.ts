@@ -17,6 +17,7 @@ import type {
   NormalizedLibrary,
   Playlist,
   PlaylistId,
+  ProviderActionResult,
   QueueItem,
   SearchResults,
   Track,
@@ -33,6 +34,10 @@ import type {
   QueueSnapshot,
   WhisperStatus,
 } from "../../domain/dj";
+import type {
+  AndroidAddMusicResult,
+  AndroidPickerResult,
+} from "../mediastore";
 
 const asTrackId = (id: string) => id as TrackId;
 const asAlbumId = (id: string) => id as AlbumId;
@@ -243,15 +248,49 @@ export class AndroidLibraryProvider implements MusicProvider {
     };
   }
 
-  async requestAddMusic() {
-    // Android has no folder picker: music arrives from the system
-    // MediaStore, so the real "add music" action is a rescan
-    // (see rescan()). The UI surfaces that as "Scan device".
+  async requestAddMusic(): Promise<ProviderActionResult> {
+    // On Android the explicit "add music" action is the Storage Access
+    // Framework picker (ACTION_OPEN_DOCUMENT) — the user picks the exact audio
+    // files MediaStore missed, with long-term read access. We run it and
+    // import the selection additively (never wiping the scanned library).
+    const result = await this.pickAudioFiles();
     return {
-      status: "unavailable" as const,
-      message:
-        "Android reads music from your device's MediaStore. Use Scan device (Library tab) to refresh your library.",
+      status: result.status === "success" ? "accepted" : "unavailable",
+      message: result.message,
     };
+  }
+
+  /**
+   * Launch the system document picker and import the selection additively into
+   * the shared library. Returns a discriminated result so the renderer can show
+   * honest success / cancelled / error feedback.
+   */
+  async pickAudioFiles(): Promise<AndroidAddMusicResult> {
+    try {
+      const response = await invoke<AndroidPickerResult>("android_native_pick_audio");
+      if (response.cancelled || response.candidates.length === 0) {
+        return {
+          status: "cancelled",
+          message: "No files were selected. Your library is unchanged.",
+        };
+      }
+      const summary = await invoke<{ added: number; cancelled: boolean }>(
+        "android_import_picked",
+        { candidates: response.candidates },
+      );
+      return {
+        status: "success",
+        added: summary.added,
+        message: `Added ${summary.added} track(s) from your selection.`,
+      };
+    } catch (error) {
+      return {
+        status: "unavailable",
+        message: `Could not open the file picker: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
   }
 
   async createPlaylist(name: string): Promise<PlaylistId> {

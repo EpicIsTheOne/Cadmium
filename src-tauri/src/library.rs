@@ -41,6 +41,29 @@ impl AndroidMediaCandidate {
     pub fn stable_id(&self) -> String {
         format!("android://{}/{}", self.volume_name, self.media_id)
     }
+
+    /// Deterministic, collision-free identity for an arbitrary Storage Access
+    /// Framework `content://` document that has no MediaStore volume/media id.
+    ///
+    /// The id is derived from the URI itself (which already encodes the
+    /// provider + document identity, e.g. `.../document/123` or
+    /// `.../tree/.../document/...`) plus the owning provider authority, so the
+    /// same file always maps to the same track id. The `saf|` prefix keeps it
+    /// clear of the MediaStore `android://` namespace and the desktop
+    /// `file:`/`folder:` namespaces.
+    pub fn saf_id(content_uri: &str) -> String {
+        // The authority (e.g. com.android.externalstorage.documents) plus the
+        // full path make a stable, provider-scoped key.
+        let uri = content_uri.trim();
+        let authority = uri
+            .split("://")
+            .nth(1)
+            .and_then(|rest| rest.split('/').next())
+            .unwrap_or("");
+        let key = format!("saf|{}|{}", authority, uri);
+        let digest = Sha256::digest(key.as_bytes());
+        format!("saf_{}", hex_digest(&digest)[..32].to_owned())
+    }
 }
 
 const MIGRATIONS: &[(i64, &str)] = &[
@@ -268,7 +291,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         r#"
         ALTER TABLE queue ADD COLUMN collection_id TEXT;
         ALTER TABLE queue ADD COLUMN collection_title TEXT;
-        "#
+        "#,
     ),
     (
         10,
@@ -287,14 +310,14 @@ const MIGRATIONS: &[(i64, &str)] = &[
             PRIMARY KEY (playlist_id, track_id)
         );
         CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
-        "#
+        "#,
     ),
     (
         11,
         r#"
         ALTER TABLE albums ADD COLUMN description TEXT NOT NULL DEFAULT '';
         ALTER TABLE playlists ADD COLUMN artwork_ref TEXT;
-        "#
+        "#,
     ),
     (
         12,
@@ -311,7 +334,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         INSERT INTO watched_folders (id, path, created_at, source_kind)
           VALUES ('android://mediastore', 'android://mediastore', 0, 'android')
           ON CONFLICT(id) DO NOTHING;
-        "#
+        "#,
     ),
 ];
 
@@ -876,7 +899,10 @@ impl LibraryRepository {
             )?;
 
             // Rebuild track_artists link.
-            tx.execute("DELETE FROM track_artists WHERE track_id = ?1", params![track_id])?;
+            tx.execute(
+                "DELETE FROM track_artists WHERE track_id = ?1",
+                params![track_id],
+            )?;
             for (position, artist_id) in artist_ids.iter().enumerate() {
                 tx.execute(
                     "INSERT INTO track_artists (track_id, artist_id, position) VALUES (?1, ?2, ?3)",
@@ -911,10 +937,123 @@ impl LibraryRepository {
         })
     }
 
-    fn upsert_android_artists(
-        tx: &Transaction<'_>,
-        artist: &str,
-    ) -> LibraryResult<Vec<String>> {
+    /// Additive import path for Storage Access Framework selections.
+    ///
+    /// Unlike `reconcile_android_media` (which is authoritative and marks every
+    /// other Android track unavailable), this UPSERTS only the selected files
+    /// and leaves all existing tracks, albums, artists, playlists, favorites,
+    /// and recent-plays untouched. This is what lets a user cherry-pick the
+    /// exact audio files MediaStore never indexed without wiping the scanned
+    /// library.
+    ///
+    /// SAF `content://` documents carry no MediaStore volume/media id, so their
+    /// stable id is derived deterministically from the URI via `saf_id`. That
+    /// id is disjoint from the MediaStore `android://` ids, so a file that is
+    /// both scanned and picked still keeps both entries (one indexed by
+    /// MediaStore, one by SAF) rather than colliding.
+    pub fn import_android_picked(
+        &mut self,
+        candidates: &[AndroidMediaCandidate],
+    ) -> LibraryResult<ScanSummaryDto> {
+        let timestamp = now_ms();
+        let tx = self.conn.transaction()?;
+
+        let mut imported = 0;
+        for candidate in candidates {
+            // SAF files have no MediaStore identity; synthesize a deterministic id.
+            let track_id = if candidate.volume_name.is_empty() && candidate.media_id.is_empty() {
+                AndroidMediaCandidate::saf_id(&candidate.content_uri)
+            } else {
+                candidate.stable_id()
+            };
+            let (album_id, album_artist_id) = Self::upsert_android_album_artists(
+                &tx,
+                &candidate.album,
+                &candidate.artist,
+                candidate.album_id.as_deref(),
+            )?;
+            let artist_ids = Self::upsert_android_artists(&tx, &candidate.artist)?;
+
+            tx.execute(
+                "INSERT INTO tracks (
+                    id, watched_folder_id, album_id, album_artist_id, title, normalized_title,
+                    track_number, disc_number, year, genre, duration_ms, source_path,
+                    extension, byte_length, modified_ms, artwork_ref, available, last_seen_ms,
+                    source_kind, source_locator, android_volume, android_media_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 1, ?17, 'android_saf', ?18, ?19, ?20)
+                 ON CONFLICT(id) DO UPDATE SET
+                    album_id = excluded.album_id,
+                    album_artist_id = excluded.album_artist_id,
+                    title = excluded.title,
+                    normalized_title = excluded.normalized_title,
+                    track_number = excluded.track_number,
+                    disc_number = excluded.disc_number,
+                    year = excluded.year,
+                    genre = excluded.genre,
+                    duration_ms = excluded.duration_ms,
+                    source_path = excluded.source_path,
+                    extension = excluded.extension,
+                    byte_length = excluded.byte_length,
+                    modified_ms = excluded.modified_ms,
+                    artwork_ref = COALESCE(excluded.artwork_ref, tracks.artwork_ref),
+                    available = 1,
+                    last_seen_ms = excluded.last_seen_ms,
+                    source_kind = 'android_saf',
+                    source_locator = excluded.source_locator,
+                    android_volume = excluded.android_volume,
+                    android_media_id = excluded.android_media_id",
+                params![
+                    track_id,
+                    ANDROID_SOURCE_ID,
+                    album_id,
+                    album_artist_id,
+                    candidate.title,
+                    normalize_text(&candidate.title),
+                    candidate.track_number,
+                    candidate.disc_number,
+                    candidate.year,
+                    candidate.genre,
+                    candidate.duration_ms,
+                    candidate.content_uri,
+                    candidate.format,
+                    candidate.byte_length,
+                    candidate.modified_at_ms,
+                    candidate.artwork_cache_path,
+                    timestamp,
+                    candidate.content_uri,
+                    candidate.volume_name,
+                    candidate.media_id,
+                ],
+            )?;
+
+            tx.execute(
+                "DELETE FROM track_artists WHERE track_id = ?1",
+                params![track_id],
+            )?;
+            for (position, artist_id) in artist_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO track_artists (track_id, artist_id, position) VALUES (?1, ?2, ?3)",
+                    params![track_id, artist_id, position as i64],
+                )?;
+            }
+            imported += 1;
+        }
+
+        cleanup_orphans(&tx)?;
+        tx.commit()?;
+
+        Ok(ScanSummaryDto {
+            folder_id: ANDROID_SOURCE_ID.to_owned(),
+            files_seen: candidates.len(),
+            tracks_indexed: imported,
+            unavailable_count: 0,
+            metadata_errors: 0,
+            sfx_skipped: 0,
+            sfx_pruned: 0,
+        })
+    }
+
+    fn upsert_android_artists(tx: &Transaction<'_>, artist: &str) -> LibraryResult<Vec<String>> {
         let name = if artist.trim().is_empty() {
             "Unknown artist"
         } else {
@@ -1757,7 +1896,9 @@ impl LibraryRepository {
     pub fn create_playlist(&mut self, raw_name: &str) -> LibraryResult<String> {
         let name = raw_name.trim().to_owned();
         if name.is_empty() || name.chars().count() > 120 {
-            return Err(LibraryError::InvalidInput("playlist name must be 1 to 120 characters".to_owned()));
+            return Err(LibraryError::InvalidInput(
+                "playlist name must be 1 to 120 characters".to_owned(),
+            ));
         }
         let id = stable_id("playlist", &format!("{}-{}", name, now_ms()));
         let stamp = now_ms();
@@ -1772,7 +1913,9 @@ impl LibraryRepository {
     pub fn rename_playlist(&mut self, playlist_id: &str, raw_name: &str) -> LibraryResult<bool> {
         let name = raw_name.trim().to_owned();
         if name.is_empty() || name.chars().count() > 120 {
-            return Err(LibraryError::InvalidInput("playlist name must be 1 to 120 characters".to_owned()));
+            return Err(LibraryError::InvalidInput(
+                "playlist name must be 1 to 120 characters".to_owned(),
+            ));
         }
         let exists: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
@@ -1790,11 +1933,17 @@ impl LibraryRepository {
     }
 
     pub fn delete_playlist(&mut self, playlist_id: &str) -> LibraryResult<bool> {
-        let affected = self.conn.execute("DELETE FROM playlists WHERE id = ?1", params![playlist_id])?;
+        let affected = self
+            .conn
+            .execute("DELETE FROM playlists WHERE id = ?1", params![playlist_id])?;
         Ok(affected > 0)
     }
 
-    pub fn add_track_to_playlist(&mut self, playlist_id: &str, track_id: &str) -> LibraryResult<bool> {
+    pub fn add_track_to_playlist(
+        &mut self,
+        playlist_id: &str,
+        track_id: &str,
+    ) -> LibraryResult<bool> {
         let playlist_exists: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
             params![playlist_id],
@@ -1823,7 +1972,11 @@ impl LibraryRepository {
         Ok(true)
     }
 
-    pub fn remove_track_from_playlist(&mut self, playlist_id: &str, track_id: &str) -> LibraryResult<bool> {
+    pub fn remove_track_from_playlist(
+        &mut self,
+        playlist_id: &str,
+        track_id: &str,
+    ) -> LibraryResult<bool> {
         let affected = self.conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
             params![playlist_id, track_id],
@@ -1831,13 +1984,25 @@ impl LibraryRepository {
         Ok(affected > 0)
     }
 
-    pub fn create_album(&mut self, raw_title: &str, artist_id: Option<&str>) -> LibraryResult<String> {
+    pub fn create_album(
+        &mut self,
+        raw_title: &str,
+        artist_id: Option<&str>,
+    ) -> LibraryResult<String> {
         let title = raw_title.trim().to_owned();
         if title.is_empty() || title.chars().count() > 200 {
-            return Err(LibraryError::InvalidInput("album title must be 1 to 200 characters".to_owned()));
+            return Err(LibraryError::InvalidInput(
+                "album title must be 1 to 200 characters".to_owned(),
+            ));
         }
-        let artist = artist_id.and_then(|id| id.trim().is_empty().then_some("")).or(artist_id).filter(|id| !id.trim().is_empty());
-        let album_id = stable_id("album", &format!("{}\\0{}", normalize_text(&title), artist.unwrap_or("")));
+        let artist = artist_id
+            .and_then(|id| id.trim().is_empty().then_some(""))
+            .or(artist_id)
+            .filter(|id| !id.trim().is_empty());
+        let album_id = stable_id(
+            "album",
+            &format!("{}\\0{}", normalize_text(&title), artist.unwrap_or("")),
+        );
         self.conn.execute(
             "INSERT INTO albums (id, title, normalized_title, year, artwork_ref) VALUES (?1, ?2, ?3, NULL, NULL)
              ON CONFLICT(id) DO UPDATE SET title = excluded.title, normalized_title = excluded.normalized_title",
@@ -2470,7 +2635,10 @@ impl LibraryRepository {
             });
         }
         tracks.sort_by(|a, b| a.bpm.cmp(&b.bpm));
-        Ok(RhythmScanResultDto { count: tracks.len(), tracks })
+        Ok(RhythmScanResultDto {
+            count: tracks.len(),
+            tracks,
+        })
     }
 
     #[cfg(test)]
@@ -3096,7 +3264,11 @@ fn mood_point(track: &TrackDto) -> MoodPointDto {
         energy,
         valence,
         label,
-        genre: track.genre.as_deref().filter(|value| !value.trim().is_empty()).map(|value| value.trim().to_owned()),
+        genre: track
+            .genre
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.trim().to_owned()),
     }
 }
 
@@ -3170,7 +3342,6 @@ fn canonicalize_directory(raw_path: &str) -> LibraryResult<PathBuf> {
 }
 
 fn is_supported_extension(path: &Path) -> bool {
-
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| {
@@ -3330,7 +3501,10 @@ mod tests {
         let library = repository.get_library().unwrap();
         // The effect-titled file must be excluded from the Spotify source.
         assert_eq!(summary.sfx_skipped, 1);
-        assert!(library.tracks.iter().all(|t| t.title != "Unrelated Sound Effect"));
+        assert!(library
+            .tracks
+            .iter()
+            .all(|t| t.title != "Unrelated Sound Effect"));
         // Neither file is ever deleted from disk by the import.
         assert!(song.is_file());
         assert!(effect.is_file());
@@ -3344,11 +3518,9 @@ mod tests {
         assert_eq!(repository.schema_version().unwrap(), 12);
         let kind: Option<String> = repository
             .conn
-            .query_row(
-                "SELECT source_kind FROM tracks LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT source_kind FROM tracks LIMIT 1", [], |row| {
+                row.get(0)
+            })
             .optional()
             .unwrap();
         // No tracks yet, but the column exists.
@@ -3407,7 +3579,9 @@ mod tests {
             artwork_cache_path: None,
         };
 
-        repository.reconcile_android_media(&[a.clone(), b.clone()]).unwrap();
+        repository
+            .reconcile_android_media(&[a.clone(), b.clone()])
+            .unwrap();
         let library = repository.get_library().unwrap();
         let find = |id: &str| library.tracks.iter().find(|t| t.id == id).unwrap();
         assert_eq!(library.tracks.len(), 2);
@@ -3433,7 +3607,10 @@ mod tests {
         assert_eq!(repository.get_favorite_track_ids().unwrap().len(), 1);
         let playlist = repository.get_user_playlists().unwrap();
         assert_eq!(playlist.len(), 1);
-        assert_eq!(playlist[0].track_ids, vec!["android://external_primary/1".to_string()]);
+        assert_eq!(
+            playlist[0].track_ids,
+            vec!["android://external_primary/1".to_string()]
+        );
     }
 
     #[test]
@@ -3460,13 +3637,123 @@ mod tests {
         };
         repository.reconcile_android_media(&[candidate]).unwrap();
         let present = repository.get_library().unwrap();
-        assert!(present.tracks.iter().find(|t| t.id == "android://external_primary/9").unwrap().available);
+        assert!(
+            present
+                .tracks
+                .iter()
+                .find(|t| t.id == "android://external_primary/9")
+                .unwrap()
+                .available
+        );
         // Rescan with an empty candidate set: the track is marked unavailable,
         // never passed through canonicalize, and never deleted.
         repository.reconcile_android_media(&[]).unwrap();
         let library = repository.get_library().unwrap();
         assert_eq!(library.tracks.len(), 1);
-        assert!(!library.tracks.iter().find(|t| t.id == "android://external_primary/9").unwrap().available);
+        assert!(
+            !library
+                .tracks
+                .iter()
+                .find(|t| t.id == "android://external_primary/9")
+                .unwrap()
+                .available
+        );
+    }
+
+    #[test]
+    fn android_saf_pick_is_additive_and_deterministic() {
+        let root = temp_root("android-saf-pick");
+        let mut repository = LibraryRepository::open_in_memory(&root).unwrap();
+
+        // Seed a scanned track so we can prove the picker does not wipe it.
+        let scanned = AndroidMediaCandidate {
+            volume_name: "external_primary".into(),
+            media_id: "1".into(),
+            content_uri: "content://media/external/audio/media/1".into(),
+            title: "Scanned Song".into(),
+            artist: "Aria".into(),
+            album: "Nightfall".into(),
+            album_id: None,
+            duration_ms: 184_000,
+            track_number: None,
+            disc_number: None,
+            year: None,
+            genre: None,
+            format: "mp3".into(),
+            byte_length: 4_000_000,
+            modified_at_ms: 1_700_000_000_000,
+            artwork_cache_path: None,
+        };
+        repository.reconcile_android_media(&[scanned]).unwrap();
+
+        // User picks files MediaStore never indexed (no volume/media id).
+        let picked = AndroidMediaCandidate {
+            volume_name: "".into(),
+            media_id: "".into(),
+            content_uri:
+                "content://com.android.externalstorage.documents/document/primary:Music/Hidden.flac"
+                    .into(),
+            title: "Hidden Track".into(),
+            artist: "Vex".into(),
+            album: "Offgrid".into(),
+            album_id: None,
+            duration_ms: 210_000,
+            track_number: None,
+            disc_number: None,
+            year: None,
+            genre: None,
+            format: "flac".into(),
+            byte_length: 8_000_000,
+            modified_at_ms: 1_700_000_000_000,
+            artwork_cache_path: None,
+        };
+        let summary = repository.import_android_picked(&[picked.clone()]).unwrap();
+        assert_eq!(summary.tracks_indexed, 1);
+
+        // The scanned track survives (not marked unavailable).
+        let after = repository.get_library().unwrap();
+        assert_eq!(after.tracks.len(), 2);
+        assert!(
+            after
+                .tracks
+                .iter()
+                .find(|t| t.id == "android://external_primary/1")
+                .unwrap()
+                .available
+        );
+
+        // The SAF id is deterministic and disjoint from the MediaStore id.
+        let saf_id = AndroidMediaCandidate::saf_id(&picked.content_uri);
+        assert!(saf_id.starts_with("saf_"));
+        assert_ne!(saf_id, "android://external_primary/1".to_string());
+        let saf_track = after.tracks.iter().find(|t| t.id == saf_id).unwrap();
+        assert!(saf_track.available);
+        assert_eq!(saf_track.source_path, Some(picked.content_uri.clone()));
+
+        // Re-importing the same URI is idempotent (upsert, no duplicate).
+        repository.import_android_picked(&[picked]).unwrap();
+        assert_eq!(repository.get_library().unwrap().tracks.len(), 2);
+
+        // A later authoritative MediaStore scan may disable the scanned row,
+        // but must never disable an explicitly selected SAF document.
+        repository.reconcile_android_media(&[]).unwrap();
+        let after_scan = repository.get_library().unwrap();
+        assert!(
+            after_scan
+                .tracks
+                .iter()
+                .find(|t| t.id == saf_id)
+                .unwrap()
+                .available
+        );
+        assert!(
+            !after_scan
+                .tracks
+                .iter()
+                .find(|t| t.id == "android://external_primary/1")
+                .unwrap()
+                .available
+        );
     }
 
     #[test]

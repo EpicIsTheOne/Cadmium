@@ -151,9 +151,11 @@ jobs:
           for plugin in permissionbridge mediastore artworkbridge rustbridge; do
             grep -a -q "$plugin" /tmp/cadmium-native.so || { echo "$plugin missing from native registration"; exit 1; }
           done
-          for command in android_request_audio_permission android_native_media_store_scan android_native_play; do
+          for command in android_request_audio_permission android_native_media_store_scan android_native_play android_native_pick_audio android_import_picked; do
             grep -a -q "$command" /tmp/cadmium-native.so || { echo "$command missing from trusted Rust proxy"; exit 1; }
           done
+          # The Kotlin SAF picker bridge must be compiled into the DEX.
+          grep -a -q "pickAudio" /tmp/cadmium-classes.dex || { echo "MediaStorePlugin.pickAudio missing from APK DEX"; exit 1; }
           echo "All custom Android bridges are packaged and registered."
 
       - name: Upload APK

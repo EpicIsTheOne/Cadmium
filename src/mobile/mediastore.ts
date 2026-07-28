@@ -91,3 +91,22 @@ function guessFormat(mimeType?: string, contentUri = ""): string {
 export function candidateIsPlayable(candidate: AndroidMediaCandidate): boolean {
   return Boolean(candidate.contentUri) && candidate.durationMs > 0;
 }
+
+/**
+ * Shape returned by the Kotlin MediaStorePlugin.pickAudio command (SAF picker).
+ * SAF documents have no MediaStore volume/media id, so those arrive blank.
+ */
+export interface AndroidPickerResult {
+  readonly candidates: AndroidMediaCandidate[];
+  readonly cancelled: boolean;
+}
+
+/**
+ * Result of provider.requestAddMusic / pickAudioFiles on Android. The picker is
+ * user-driven and may be cancelled; we distinguish that from a real success or
+ * an error so the renderer can show honest feedback without fake-positive UI.
+ */
+export type AndroidAddMusicResult =
+  | { readonly status: "success"; readonly added: number; readonly message: string }
+  | { readonly status: "cancelled"; readonly message: string }
+  | { readonly status: "unavailable"; readonly message: string };

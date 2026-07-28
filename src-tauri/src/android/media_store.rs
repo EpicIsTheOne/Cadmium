@@ -54,9 +54,30 @@ pub fn reconcile(
     repository: &mut LibraryRepository,
     candidates: &[AndroidMediaCandidateDto],
 ) -> Result<ScanSummaryDto, String> {
-    let domain: Vec<AndroidMediaCandidate> = candidates.iter().cloned().map(|c| c.into_domain()).collect();
+    let domain: Vec<AndroidMediaCandidate> = candidates
+        .iter()
+        .cloned()
+        .map(|c| c.into_domain())
+        .collect();
     repository
         .reconcile_android_media(&domain)
+        .map_err(|error| error.to_string())
+}
+
+/// Additive import of SAF-picked document URIs. Unlike `reconcile`, this does
+/// NOT mark unseen Android tracks unavailable, so a partial picker set can
+/// safely flow through it without disturbing the scanned library.
+pub fn import(
+    repository: &mut LibraryRepository,
+    candidates: &[AndroidMediaCandidateDto],
+) -> Result<ScanSummaryDto, String> {
+    let domain: Vec<AndroidMediaCandidate> = candidates
+        .iter()
+        .cloned()
+        .map(|c| c.into_domain())
+        .collect();
+    repository
+        .import_android_picked(&domain)
         .map_err(|error| error.to_string())
 }
 

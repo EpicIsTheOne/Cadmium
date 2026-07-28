@@ -316,6 +316,16 @@
 }
 .mobile-shell .primary-button:active { transform: scale(0.985); }
 .mobile-shell .primary-button:disabled { opacity: .5; }
+.mobile-shell .primary-button--accent {
+  background: var(--accent); color: #04130d;
+  box-shadow: 0 10px 24px var(--accent-glow);
+}
+.mobile-shell .primary-button--ghost {
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.mobile-shell .primary-button--ghost:active { transform: scale(0.985); }
 .mobile-shell .playlist-create { display: flex; gap: 8px; }
 .mobile-shell .playlist-create input {
   flex: 1; padding: 12px 14px; border-radius: 12px;
@@ -484,6 +494,17 @@
 .mobile-shell .mobile-empty-title { margin: 0; font-size: 20px; color: var(--ink); }
 .mobile-shell .mobile-empty-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 30ch; }
 .mobile-shell .mobile-empty .primary-button { display: inline-flex; align-items: center; gap: 8px; width: auto; padding: 12px 20px; }
+
+.mobile-shell .import-feedback {
+  display: flex; align-items: center; gap: 8px;
+  margin: 12px 2px 0; padding: 10px 14px; border-radius: 12px;
+  font-size: 13px; line-height: 1.4; text-align: left;
+  background: var(--surface-soft); border: 1px solid var(--line); color: var(--muted);
+}
+.mobile-shell .import-feedback--success { color: var(--accent); border-color: var(--accent-line); background: var(--accent-dim); }
+.mobile-shell .import-feedback--cancelled { color: var(--muted); }
+.mobile-shell .import-feedback--error { color: #ff8a8a; border-color: rgba(255, 138, 138, 0.32); background: rgba(255, 138, 138, 0.08); }
+.mobile-shell .import-feedback--loading { color: var(--accent); }
 
 /* ---- collection detail view (album / playlist) like Spotify ---- */
 .mobile-shell .collection-view { position: relative; }

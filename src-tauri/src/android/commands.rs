@@ -9,6 +9,7 @@ use crate::android::media_store::{self, AndroidMediaCandidateDto};
 use crate::android::playback::{self, AndroidQueueItem, NativePlaybackState};
 use crate::android::plugins::{ArtworkBridge, MediaStoreBridge, PermissionBridge, RustBridge};
 use crate::library::{NormalizedLibraryDto, ScanSummaryDto, SearchResultsDto};
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::State;
 
@@ -48,6 +49,13 @@ pub fn android_native_media_store_scan(
     bridge: State<'_, MediaStoreBridge<tauri::Wry>>,
 ) -> Result<Value, String> {
     bridge.run("scan", ())
+}
+
+#[tauri::command]
+pub fn android_native_pick_audio(
+    bridge: State<'_, MediaStoreBridge<tauri::Wry>>,
+) -> Result<Value, String> {
+    bridge.run("pickAudio", ())
 }
 
 #[tauri::command]
@@ -144,6 +152,31 @@ pub fn android_reconcile_media(
         .lock()
         .map_err(|_| "library repository lock is poisoned".to_owned())?;
     media_store::reconcile(&mut repository, &candidates)
+}
+
+/// Result of an additive SAF picker import. `cancelled` is true when the user
+/// dismissed the system picker; `added` is the number of tracks upserted.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AndroidPickResult {
+    pub added: usize,
+    pub cancelled: bool,
+}
+
+#[tauri::command]
+pub fn android_import_picked(
+    state: State<'_, AppState>,
+    candidates: Vec<AndroidMediaCandidateDto>,
+) -> Result<AndroidPickResult, String> {
+    let mut repository = state
+        .repository
+        .lock()
+        .map_err(|_| "library repository lock is poisoned".to_owned())?;
+    let summary = media_store::import(&mut repository, &candidates)?;
+    Ok(AndroidPickResult {
+        added: summary.tracks_indexed,
+        cancelled: false,
+    })
 }
 
 #[tauri::command]

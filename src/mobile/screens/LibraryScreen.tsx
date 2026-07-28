@@ -14,6 +14,10 @@ export function LibraryScreen({
   scanning,
   onNavigate,
   onCreatePlaylist,
+  onImportMusic,
+  importing,
+  importResult,
+  importResultKind,
   onOpenCollection,
 }: {
   library: NormalizedLibrary | null;
@@ -24,6 +28,10 @@ export function LibraryScreen({
   scanning: boolean;
   onNavigate: (tab: "home" | "search" | "library" | "settings") => void;
   onCreatePlaylist: () => void;
+  onImportMusic: () => void;
+  importing: boolean;
+  importResult: string | null;
+  importResultKind: "success" | "cancelled" | "error" | null;
   onOpenCollection?: (kind: "album" | "playlist", id: string) => void;
 }) {
   const [segment, setSegment] = useState<Segment>("songs");
@@ -32,6 +40,13 @@ export function LibraryScreen({
   const albumTrackIds = (albumId: string): TrackId[] =>
     library ? library.trackOrder.filter((id) => library.tracksById[id]?.albumId === albumId && library.tracksById[id]?.available) : [];
 
+  const feedbackBanner =
+    importResult && importResultKind ? (
+      <div className={`import-feedback import-feedback--${importResultKind}`} role="status">
+        {importResult}
+      </div>
+    ) : null;
+
   if (!library) {
     return (
       <section className="mobile-section">
@@ -39,7 +54,14 @@ export function LibraryScreen({
           <h1 className="section-title">Your Library</h1>
           <button type="button" className="icon-button" aria-label="Scan device" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
         </div>
-        <LibraryEmpty library={library} onScan={onRescan} scanning={scanning} />
+        <LibraryEmpty
+          library={library}
+          onScan={onRescan}
+          scanning={scanning}
+          onChooseFiles={onImportMusic}
+          importing={importing}
+        />
+        {feedbackBanner}
       </section>
     );
   }
@@ -51,7 +73,14 @@ export function LibraryScreen({
           <h1 className="section-title">Your Library</h1>
           <button type="button" className="icon-button" aria-label="Scan device" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
         </div>
-        <LibraryEmpty library={library} onScan={onRescan} scanning={scanning} />
+        <LibraryEmpty
+          library={library}
+          onScan={onRescan}
+          scanning={scanning}
+          onChooseFiles={onImportMusic}
+          importing={importing}
+        />
+        {feedbackBanner}
       </section>
     );
   }
@@ -62,9 +91,13 @@ export function LibraryScreen({
         <div className="library-title-row"><span className="library-avatar">C</span><h1 className="section-title">Your Library</h1></div>
         <div className="library-head-actions">
           <button type="button" className="icon-button" aria-label="Scan device for music" onClick={onRescan} disabled={scanning}><Icon name="refresh" size={18} /></button>
-          <button type="button" className="icon-button" aria-label="Create playlist" onClick={onCreatePlaylist}><Icon name="plus" size={18} /></button>
+          <button type="button" className="icon-button" aria-label="Choose audio files" onClick={onImportMusic} disabled={importing}><Icon name="plus" size={18} /></button>
+          <button type="button" className="icon-button" aria-label="Create playlist" onClick={onCreatePlaylist}><Icon name="list" size={18} /></button>
         </div>
       </div>
+
+      {importing && <div className="import-feedback import-feedback--loading">Choosing audio files…</div>}
+      {feedbackBanner}
 
       <div className="segment-tabs" role="tablist">
         {(["songs", "albums", "artists", "playlists"] as Segment[]).map((seg) => (
