@@ -61,7 +61,7 @@ jobs:
       # Tauri-plugin / Media3 API wiring is still being iterated on. Flip
       # CUSTOM_ANDROID=1 (workflow_dispatch input) to attempt the full build.
       - name: Integrate custom Cadmium Kotlin (optional)
-        if: ${{ inputs.custom_android == 'true' }}
+        if: ${{ github.event_name == 'push' || inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           SRC=src-tauri/android/app/src/main
@@ -79,7 +79,7 @@ jobs:
           cp -r "$SRC/res/." "$DST/res/"
 
       - name: Patch generated AndroidManifest (optional)
-        if: ${{ inputs.custom_android == 'true' }}
+        if: ${{ github.event_name == 'push' || inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           MAN=$GEN/app/src/main/AndroidManifest.xml
@@ -95,7 +95,7 @@ jobs:
           grep "uses-permission" "$MAN" | head -5
 
       - name: Wire Media3 deps (optional)
-        if: ${{ inputs.custom_android == 'true' }}
+        if: ${{ github.event_name == 'push' || inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           GRADLE=$GEN/app/build.gradle.kts
@@ -135,6 +135,7 @@ jobs:
         run: npm run android:build:debug
 
       - name: Verify custom Android bridges are packaged and registered
+        if: ${{ github.event_name == 'push' || inputs.custom_android == 'true' }}
         run: |
           set -euo pipefail
           APK=$(find "$GEN/app/build/outputs/apk" -name '*.apk' -print -quit)
