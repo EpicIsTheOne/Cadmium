@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRequestAgain,
   libraryUsable,
+  resolveNativePermissionState,
   resolvePermissionStatus,
   shouldExplain,
   type PermissionState,
@@ -29,6 +30,13 @@ describe("android permission states", () => {
     expect(decision.canOpenSettings).toBe(true);
     expect(canRequestAgain("permanentlyDenied")).toBe(false);
     expect(libraryUsable("permanentlyDenied")).toBe(false);
+  });
+
+  it("maps the selected native audio permission state without mixing API-level aliases", () => {
+    expect(resolveNativePermissionState("granted").state).toBe("granted");
+    expect(resolveNativePermissionState("prompt-with-rationale").state).toBe("denied");
+    expect(resolveNativePermissionState("denied").state).toBe("permanentlyDenied");
+    expect(resolveNativePermissionState("prompt").state).toBe("unknown");
   });
 
   it("explains on unknown and denied, but not on granted or permanent denial", () => {

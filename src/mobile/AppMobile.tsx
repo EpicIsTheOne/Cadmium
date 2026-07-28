@@ -20,7 +20,8 @@ import {
 import { AndroidPlaybackEngine } from "./playback/mobile-engine";
 import { isPreviewMode, createPreviewProvider } from "./preview";
 import {
-  resolvePermissionStatus,
+  resolveNativePermissionState,
+  type NativeAudioPermissionState,
   type PermissionState,
 } from "./permissions";
 import { DEFAULT_MOBILE_RHYTHM, shouldRenderRhythm } from "./rhythm";
@@ -119,38 +120,36 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
     void loadLibrary();
   }, [loadLibrary]);
 
-  const requestPermission = useCallback(async () => {
+  const checkPermission = useCallback(async () => {
     try {
-      const states = await invoke<Record<string, string>>(
-        "plugin:permissionbridge|requestPermissions",
-        { permissions: ["mediaAudio", "externalStorage"] },
+      const result = await invoke<{ state: NativeAudioPermissionState }>(
+        "plugin:permissionbridge|checkAudioPermission",
       );
-      const values = Object.values(states);
-      const granted = values.includes("granted");
-      const shouldShowRationale = values.includes("prompt-with-rationale");
-      const decision = resolvePermissionStatus({ granted, shouldShowRationale });
+      const decision = resolveNativePermissionState(result.state);
       setPermission(decision.state);
-      if (decision.state === "granted") void loadLibrary();
     } catch {
       setPermission("denied");
     }
-  }, [loadLibrary]);
+  }, []);
 
-  // First launch: actually surface the OS permission prompt instead of waiting
-  // for the user to find the gate. Only does this when the status is still
-  // unknown (not yet granted, not yet denied).
+  const requestPermission = useCallback(async () => {
+    try {
+      const result = await invoke<{ state: NativeAudioPermissionState }>(
+        "plugin:permissionbridge|requestAudioPermission",
+      );
+      const decision = resolveNativePermissionState(result.state);
+      setPermission(decision.state);
+    } catch {
+      setPermission("denied");
+    }
+  }, []);
+
+  // Read the current state on launch. The OS prompt remains tied to the gate's
+  // button so Android receives a real, user-initiated permission request.
   useEffect(() => {
     if (preview) return;
-    if (permission !== "unknown") return;
-    let cancelled = false;
-    const t = window.setTimeout(() => {
-      if (!cancelled) void requestPermission();
-    }, 400);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(t);
-    };
-  }, [preview, permission, requestPermission]);
+    void checkPermission();
+  }, [preview, checkPermission]);
 
   // Re-check permission when the app regains focus (e.g. the user returns
   // from system settings after granting there). Without this, a manual grant
@@ -158,7 +157,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   useEffect(() => {
     if (preview) return;
     const recheck = () => {
-      if (permission !== "granted") void requestPermission();
+      if (permission !== "granted") void checkPermission();
     };
     const onVisible = () => { if (document.visibilityState === "visible") recheck(); };
     document.addEventListener("visibilitychange", onVisible);
@@ -167,7 +166,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", recheck);
     };
-  }, [preview, permission, requestPermission]);
+  }, [preview, permission, checkPermission]);
 
   // Android system Back closes sheets first, then exits the app.
   useEffect(() => {

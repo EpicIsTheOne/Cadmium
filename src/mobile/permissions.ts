@@ -18,7 +18,29 @@ export interface PermissionDecision {
   readonly canOpenSettings: boolean;
 }
 
-/** Pure transition helper — the UI calls this with the OS-reported status. */
+export type NativeAudioPermissionState =
+  | "granted"
+  | "denied"
+  | "prompt"
+  | "prompt-with-rationale";
+
+/** Map the one API-appropriate permission selected by the native bridge. */
+export function resolveNativePermissionState(
+  state: NativeAudioPermissionState,
+): PermissionDecision {
+  if (state === "granted") {
+    return { state: "granted", canOpenSettings: false };
+  }
+  if (state === "prompt") {
+    return { state: "unknown", canOpenSettings: false };
+  }
+  if (state === "prompt-with-rationale") {
+    return { state: "denied", canOpenSettings: false };
+  }
+  return { state: "permanentlyDenied", canOpenSettings: true };
+}
+
+/** Pure transition helper — retained for callers that report booleans. */
 export function resolvePermissionStatus(raw: {
   granted: boolean;
   shouldShowRationale: boolean;
