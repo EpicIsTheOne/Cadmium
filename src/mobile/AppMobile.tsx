@@ -57,6 +57,8 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const [library, setLibrary] = useState<NormalizedLibrary | null>(null);
   const [favoriteTrackIds, setFavoriteTrackIds] = useState<readonly TrackId[]>([]);
   const [permission, setPermission] = useState<PermissionState>(preview ? "granted" : "unknown");
+  const [permissionBusy, setPermissionBusy] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -123,24 +125,42 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   const checkPermission = useCallback(async () => {
     try {
       const result = await invoke<{ state: NativeAudioPermissionState }>(
-        "plugin:permissionbridge|checkAudioPermission",
+        "android_check_audio_permission",
       );
       const decision = resolveNativePermissionState(result.state);
       setPermission(decision.state);
-    } catch {
+    } catch (error) {
       setPermission("denied");
+      setPermissionError(`Android permission bridge failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, []);
 
   const requestPermission = useCallback(async () => {
+    setPermissionBusy(true);
+    setPermissionError(null);
     try {
       const result = await invoke<{ state: NativeAudioPermissionState }>(
-        "plugin:permissionbridge|requestAudioPermission",
+        "android_request_audio_permission",
       );
       const decision = resolveNativePermissionState(result.state);
       setPermission(decision.state);
-    } catch {
+    } catch (error) {
       setPermission("denied");
+      setPermissionError(`Android permission request failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setPermissionBusy(false);
+    }
+  }, []);
+
+  const openPermissionSettings = useCallback(async () => {
+    setPermissionBusy(true);
+    setPermissionError(null);
+    try {
+      await invoke("android_open_app_settings");
+    } catch (error) {
+      setPermissionError(`Opening Android settings failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setPermissionBusy(false);
     }
   }, []);
 
@@ -245,10 +265,10 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
     return (
       <PermissionGate
         state={permission}
+        busy={permissionBusy}
+        error={permissionError}
         onRequest={requestPermission}
-        onOpenSettings={() => {
-          void invoke("plugin:permissionbridge|openAppSettings");
-        }}
+        onOpenSettings={() => void openPermissionSettings()}
       />
     );
   }

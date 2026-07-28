@@ -129,7 +129,7 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
       collectionId: item.collectionId ?? null,
       collectionTitle: item.collectionTitle ?? null,
     }));
-    await invoke("plugin:rustbridge|setQueue", {
+    await invoke("android_native_set_queue", {
       items,
       startIndex: input.startIndex,
       autoplay: input.autoplay,
@@ -137,7 +137,7 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
   }
 
   async play(): Promise<void> {
-    await invoke("plugin:rustbridge|play");
+    await invoke("android_native_play");
     if (this.snapshot.currentTrackId) {
       void invoke("android_record_recent_play", {
         trackId: this.snapshot.currentTrackId,
@@ -147,35 +147,35 @@ export class AndroidPlaybackEngine implements PlaybackEngine {
   }
 
   async pause(): Promise<void> {
-    await invoke("plugin:rustbridge|pause");
+    await invoke("android_native_pause");
   }
 
   async seekTo(positionMs: number): Promise<void> {
-    await invoke("plugin:rustbridge|seek", { positionMs: Math.max(0, Math.round(positionMs)) });
+    await invoke("android_native_seek", { positionMs: Math.max(0, Math.round(positionMs)) });
   }
 
   async next(): Promise<void> {
-    await invoke("plugin:rustbridge|next");
+    await invoke("android_native_next");
   }
 
   async previous(): Promise<void> {
-    await invoke("plugin:rustbridge|previous");
+    await invoke("android_native_previous");
   }
 
   async setShuffle(enabled: boolean): Promise<void> {
-    await invoke("plugin:rustbridge|setShuffle", { enabled });
+    await invoke("android_native_set_shuffle", { enabled });
   }
 
   async setRepeatMode(mode: RepeatMode): Promise<void> {
-    await invoke("plugin:rustbridge|setRepeatMode", { mode });
+    await invoke("android_native_set_repeat_mode", { mode });
   }
 
   async setVolume(volume: number): Promise<void> {
     const next = clampVolume(volume);
-    await invoke("plugin:rustbridge|setVolume", { volume: next });
+    await invoke("android_native_set_volume", { volume: next });
   }
 
   async clearQueue(): Promise<void> {
-    await invoke("plugin:rustbridge|clearQueue");
+    await invoke("android_native_clear_queue");
   }
 }

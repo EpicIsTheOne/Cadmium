@@ -3,10 +3,14 @@ import type { PermissionState } from "../permissions";
 
 export function PermissionGate({
   state,
+  busy = false,
+  error = null,
   onRequest,
   onOpenSettings,
 }: {
   state: PermissionState;
+  busy?: boolean;
+  error?: string | null;
   onRequest: () => void;
   onOpenSettings: () => void;
 }) {
@@ -25,13 +29,14 @@ export function PermissionGate({
           {state === "denied" && (
             <p className="permission-hint">You can grant access whenever you're ready.</p>
           )}
+          {error && <p className="permission-error" role="alert">{error}</p>}
           {permanently ? (
-            <button type="button" className="primary-button" onClick={onOpenSettings}>
-              Open app settings
+            <button type="button" className="primary-button" disabled={busy} onClick={onOpenSettings}>
+              {busy ? "Opening app settings…" : "Open app settings"}
             </button>
           ) : (
-            <button type="button" className="primary-button" onClick={onRequest}>
-              {state === "unknown" ? "Continue" : "Grant audio access"}
+            <button type="button" className="primary-button" disabled={busy} onClick={onRequest}>
+              {busy ? "Opening Android prompt…" : state === "unknown" ? "Continue" : "Grant audio access"}
             </button>
           )}
         </div>

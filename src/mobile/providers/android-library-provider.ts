@@ -124,7 +124,7 @@ async function fetchArtworkCache(refs: string[]): Promise<Map<string, string>> {
   const unique = Array.from(new Set(refs.filter((r) => r && r.startsWith("content://"))));
   if (unique.length === 0) return new Map();
   try {
-    const response = await invoke<{ images: string[] }>("plugin:artworkbridge|getArtworks", {
+    const response = await invoke<{ images: string[] }>("android_get_artworks", {
       uris: unique,
     });
     const cache = new Map<string, string>();
@@ -336,7 +336,7 @@ export class AndroidLibraryProvider implements MusicProvider {
     // normalized candidate list; we hand it to Rust android_reconcile_media,
     // which writes the shared library, then read it back.
     const response = await invoke<{ candidates: AndroidMediaCandidate[] }>(
-      "plugin:mediastore|scan",
+      "android_native_media_store_scan",
     );
     await invoke("android_reconcile_media", { candidates: response.candidates });
     return this.getLibrary();

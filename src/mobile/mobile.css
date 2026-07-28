@@ -390,6 +390,11 @@
 .mobile-shell .permission-card h1 { margin: 0; font-size: 22px; }
 .mobile-shell .permission-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .mobile-shell .permission-hint { color: var(--quiet); }
+.mobile-shell .permission-card .permission-error {
+  color: #ff8f8f;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .mobile-shell .panel-surface { background: var(--surface-raised); border: 1px solid var(--line); }
 
 /* sheets (now playing / queue) */

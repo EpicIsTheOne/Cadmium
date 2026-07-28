@@ -54,6 +54,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Verify Android native calls use the trusted app-command bridge
+        run: npx vitest run src/tests/android-native-bridge.test.ts
+
       - name: Init Android project
         run: npm run android:init
 
@@ -147,6 +150,9 @@ jobs:
           unzip -p "$APK" 'lib/*/libcadmium_lib.so' > /tmp/cadmium-native.so
           for plugin in permissionbridge mediastore artworkbridge rustbridge; do
             grep -a -q "$plugin" /tmp/cadmium-native.so || { echo "$plugin missing from native registration"; exit 1; }
+          done
+          for command in android_request_audio_permission android_native_media_store_scan android_native_play; do
+            grep -a -q "$command" /tmp/cadmium-native.so || { echo "$command missing from trusted Rust proxy"; exit 1; }
           done
           echo "All custom Android bridges are packaged and registered."
 

@@ -11,4 +11,20 @@ describe("PermissionGate", () => {
     expect(html).toContain('class="app-shell mobile-shell"');
     expect(html).toContain('class="mobile-permission"');
   });
+
+  it("shows native progress and errors instead of failing silently", () => {
+    const html = renderToStaticMarkup(
+      <PermissionGate
+        state="denied"
+        busy
+        error="Command blocked"
+        onRequest={() => {}}
+        onOpenSettings={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Opening Android prompt…");
+    expect(html).toContain("Command blocked");
+    expect(html).toContain("disabled");
+  });
 });

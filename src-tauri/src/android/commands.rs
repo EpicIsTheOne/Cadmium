@@ -6,13 +6,117 @@
 //! the desktop — the same Rust handlers serve both products.
 
 use crate::android::media_store::{self, AndroidMediaCandidateDto};
-use crate::android::playback::{
-    self, AndroidQueueItem, NativePlaybackState,
-};
+use crate::android::playback::{self, AndroidQueueItem, NativePlaybackState};
+use crate::android::plugins::{ArtworkBridge, MediaStoreBridge, PermissionBridge, RustBridge};
 use crate::library::{NormalizedLibraryDto, ScanSummaryDto, SearchResultsDto};
+use serde_json::{json, Value};
 use tauri::State;
 
 use crate::commands::{lock_repository, AppState};
+
+// ── Trusted app-command proxies for native Kotlin plugins ──────────────────
+//
+// Inline `plugin:*` calls are subject to Tauri's plugin ACL and were denied by
+// the app capability before they ever reached Kotlin. These top-level commands
+// use the PluginHandle returned by register_android_plugin(), matching Tauri's
+// official mobile-plugin architecture while keeping the renderer on the app's
+// trusted command surface.
+
+#[tauri::command]
+pub fn android_check_audio_permission(
+    bridge: State<'_, PermissionBridge<tauri::Wry>>,
+) -> Result<Value, String> {
+    bridge.run("checkAudioPermission", ())
+}
+
+#[tauri::command]
+pub fn android_request_audio_permission(
+    bridge: State<'_, PermissionBridge<tauri::Wry>>,
+) -> Result<Value, String> {
+    bridge.run("requestAudioPermission", ())
+}
+
+#[tauri::command]
+pub fn android_open_app_settings(
+    bridge: State<'_, PermissionBridge<tauri::Wry>>,
+) -> Result<Value, String> {
+    bridge.run("openAppSettings", ())
+}
+
+#[tauri::command]
+pub fn android_native_media_store_scan(
+    bridge: State<'_, MediaStoreBridge<tauri::Wry>>,
+) -> Result<Value, String> {
+    bridge.run("scan", ())
+}
+
+#[tauri::command]
+pub fn android_get_artworks(
+    bridge: State<'_, ArtworkBridge<tauri::Wry>>,
+    uris: Vec<String>,
+) -> Result<Value, String> {
+    bridge.run("getArtworks", json!({ "uris": uris }))
+}
+
+#[tauri::command]
+pub fn android_native_set_queue(
+    bridge: State<'_, RustBridge<tauri::Wry>>,
+    items: Value,
+    start_index: usize,
+    autoplay: bool,
+) -> Result<Value, String> {
+    bridge.run(
+        "setQueue",
+        json!({ "items": items, "startIndex": start_index, "autoplay": autoplay }),
+    )
+}
+
+macro_rules! native_playback_command {
+    ($name:ident, $native:literal) => {
+        #[tauri::command]
+        pub fn $name(bridge: State<'_, RustBridge<tauri::Wry>>) -> Result<Value, String> {
+            bridge.run($native, ())
+        }
+    };
+}
+
+native_playback_command!(android_native_play, "play");
+native_playback_command!(android_native_pause, "pause");
+native_playback_command!(android_native_next, "next");
+native_playback_command!(android_native_previous, "previous");
+native_playback_command!(android_native_clear_queue, "clearQueue");
+
+#[tauri::command]
+pub fn android_native_seek(
+    bridge: State<'_, RustBridge<tauri::Wry>>,
+    position_ms: u64,
+) -> Result<Value, String> {
+    bridge.run("seek", json!({ "positionMs": position_ms }))
+}
+
+#[tauri::command]
+pub fn android_native_set_volume(
+    bridge: State<'_, RustBridge<tauri::Wry>>,
+    volume: f32,
+) -> Result<Value, String> {
+    bridge.run("setVolume", json!({ "volume": volume }))
+}
+
+#[tauri::command]
+pub fn android_native_set_repeat_mode(
+    bridge: State<'_, RustBridge<tauri::Wry>>,
+    mode: String,
+) -> Result<Value, String> {
+    bridge.run("setRepeatMode", json!({ "mode": mode }))
+}
+
+#[tauri::command]
+pub fn android_native_set_shuffle(
+    bridge: State<'_, RustBridge<tauri::Wry>>,
+    enabled: bool,
+) -> Result<Value, String> {
+    bridge.run("setShuffle", json!({ "enabled": enabled }))
+}
 
 #[tauri::command]
 pub fn android_media_store_scan(_app: tauri::AppHandle) -> Result<ScanSummaryDto, String> {
@@ -43,7 +147,10 @@ pub fn android_reconcile_media(
 }
 
 #[tauri::command]
-pub fn android_set_queue(_app: tauri::AppHandle, queue: Vec<AndroidQueueItem>) -> Result<(), String> {
+pub fn android_set_queue(
+    _app: tauri::AppHandle,
+    queue: Vec<AndroidQueueItem>,
+) -> Result<(), String> {
     let state = NativePlaybackState {
         current_index: None,
         current_track_id: queue.first().map(|item| item.track_id.clone()),
@@ -149,9 +256,7 @@ pub fn android_search_library(
 }
 
 #[tauri::command]
-pub fn android_get_favorite_track_ids(
-    state: State<'_, AppState>,
-) -> Result<Vec<String>, String> {
+pub fn android_get_favorite_track_ids(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     lock_repository(&state)?
         .get_favorite_track_ids()
         .map_err(|error| error.to_string())
@@ -169,9 +274,7 @@ pub fn android_set_track_favorite(
 }
 
 #[tauri::command]
-pub fn android_get_recent_track_ids(
-    state: State<'_, AppState>,
-) -> Result<Vec<String>, String> {
+pub fn android_get_recent_track_ids(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     lock_repository(&state)?
         .get_recent_track_ids()
         .map_err(|error| error.to_string())
