@@ -121,12 +121,14 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
 
   const requestPermission = useCallback(async () => {
     try {
-      const status = await invoke<{ granted: boolean; shouldShowRationale: boolean }>(
-        "plugin:permissionbridge|requestAudioPermission",
+      const states = await invoke<Record<string, string>>(
+        "plugin:permissionbridge|requestPermissions",
+        { permissions: ["mediaAudio", "externalStorage"] },
       );
-      const decision = status
-        ? resolvePermissionStatus(status)
-        : { state: "denied" as PermissionState, canOpenSettings: true };
+      const values = Object.values(states);
+      const granted = values.includes("granted");
+      const shouldShowRationale = values.includes("prompt-with-rationale");
+      const decision = resolvePermissionStatus({ granted, shouldShowRationale });
       setPermission(decision.state);
       if (decision.state === "granted") void loadLibrary();
     } catch {

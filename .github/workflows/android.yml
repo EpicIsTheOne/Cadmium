@@ -88,6 +88,9 @@ jobs:
           if ! grep -q "READ_MEDIA_AUDIO" "$MAN"; then
             sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />#' "$MAN"
           fi
+          if ! grep -q "READ_EXTERNAL_STORAGE" "$MAN"; then
+            sed -i 's#<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />#<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />#' "$MAN"
+          fi
           echo "--- manifest permissions ---"
           grep "uses-permission" "$MAN" | head -5
 
