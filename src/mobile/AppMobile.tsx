@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { CadmiumRuntime } from "../platform/runtime";
 import { Icon } from "../shared/components/Icon";
 import { EmptyState } from "../shared/components/EmptyState";
@@ -119,31 +120,10 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
   }, [loadLibrary]);
 
   const requestPermission = useCallback(async () => {
-    // The native PermissionBridge injects window.__CADMIUM_ANDROID__ from its
-    // load() hook. If the gate renders before that injection lands, calling
-    // the bridge would be undefined — treat that as "not ready", never as
-    // granted, or the OS prompt is skipped and MediaStore silently returns
-    // nothing. Poll briefly for the global, then call the real native flow.
-    const getBridge = () =>
-      (window as unknown as { __CADMIUM_ANDROID__?: {
-        requestAudioPermission: () => Promise<{ granted: boolean; shouldShowRationale: boolean }>;
-        openAppSettings: () => void;
-      } }).__CADMIUM_ANDROID__;
-
-    let bridge = getBridge();
-    for (let i = 0; i < 20 && !bridge; i++) {
-      await new Promise((r) => setTimeout(r, 50));
-      bridge = getBridge();
-    }
-
-    if (!bridge) {
-      // Native bridge never appeared — don't fabricate a grant.
-      setPermission("denied");
-      return;
-    }
-
     try {
-      const status = await bridge.requestAudioPermission();
+      const status = await invoke<{ granted: boolean; shouldShowRationale: boolean }>(
+        "plugin:permissionbridge|requestAudioPermission",
+      );
       const decision = status
         ? resolvePermissionStatus(status)
         : { state: "denied" as PermissionState, canOpenSettings: true };
@@ -266,8 +246,7 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
         state={permission}
         onRequest={requestPermission}
         onOpenSettings={() => {
-          (window as unknown as { __CADMIUM_ANDROID__?: { openAppSettings: () => void } })
-            .__CADMIUM_ANDROID__?.openAppSettings();
+          void invoke("plugin:permissionbridge|openAppSettings");
         }}
       />
     );

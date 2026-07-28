@@ -11,3 +11,4 @@
 pub mod commands;
 pub mod media_store;
 pub mod playback;
+pub mod plugins;

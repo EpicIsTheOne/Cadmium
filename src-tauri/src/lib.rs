@@ -11,6 +11,10 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(android::plugins::permission_bridge())
+        .plugin(android::plugins::media_store())
+        .plugin(android::plugins::artwork_bridge())
+        .plugin(android::plugins::rust_bridge())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let state = commands::AppState::new(&data_dir)

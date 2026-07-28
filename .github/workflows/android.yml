@@ -124,12 +124,27 @@ jobs:
       # --target flags (see android:build:debug in package.json), NOT via
       # build.gradle edits. Previously attempted abiFilters hack broke Gradle.
 
-      # NOTE: Tauri v2 auto-registers @TauriPlugin classes at runtime; no
-      # MainActivity change is needed. The earlier `add(Plugin())` approach was
-      # wrong for v2 and has been removed.
+      # Native Kotlin plugins are explicitly registered from Rust in
+      # src-tauri/src/android/plugins.rs via register_android_plugin(). The
+      # @TauriPlugin annotation exposes commands but does NOT register a class.
 
       - name: Build debug APK
         run: npm run android:build:debug
+
+      - name: Verify custom Android bridges are packaged and registered
+        run: |
+          set -euo pipefail
+          APK=$(find "$GEN/app/build/outputs/apk" -name '*.apk' -print -quit)
+          test -n "$APK" || { echo "APK missing"; exit 1; }
+          unzip -p "$APK" 'classes*.dex' > /tmp/cadmium-classes.dex
+          for cls in PermissionBridge MediaStorePlugin ArtworkBridge RustBridge; do
+            grep -a -q "$cls" /tmp/cadmium-classes.dex || { echo "$cls missing from APK DEX"; exit 1; }
+          done
+          unzip -p "$APK" 'lib/*/libcadmium_lib.so' > /tmp/cadmium-native.so
+          for plugin in permissionbridge mediastore artworkbridge rustbridge; do
+            grep -a -q "$plugin" /tmp/cadmium-native.so || { echo "$plugin missing from native registration"; exit 1; }
+          done
+          echo "All custom Android bridges are packaged and registered."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
