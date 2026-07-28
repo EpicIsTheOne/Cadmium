@@ -60,7 +60,7 @@ export function NowPlayingSheet({
       style={{ "--np-art": track.artwork ? `url(${track.artwork.src})` : "none" } as CSSProperties}
     >
       <div className="np-topline">
-        <button type="button" className="np-collapse" onClick={onClose} aria-label="Collapse player"><Icon name="close" size={18} /></button>
+        <button type="button" className="np-collapse" onClick={onClose} aria-label="Collapse player"><Icon name="chevron-right" size={22} style={{ transform: "rotate(90deg)" }} /></button>
         <div><span>Playing from</span><strong>{track.albumId ? library?.albumsById[track.albumId]?.title : "Your Library"}</strong></div>
         <button type="button" className="np-menu" aria-label="More options">•••</button>
       </div>

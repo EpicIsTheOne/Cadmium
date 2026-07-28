@@ -68,11 +68,10 @@ export function HomeScreen({
     <section className="mobile-section">
       <header className="mobile-topline">
         <div>
-          <p className="mobile-home-eyebrow">Cadmium</p>
           <h1 className="section-title">{greeting}</h1>
         </div>
-        <button type="button" className="topline-action" aria-label="Scan device" onClick={onRescan} disabled={scanning}>
-          <Icon name="refresh" size={19} />
+        <button type="button" className="topline-action" aria-label="Settings" onClick={() => onNavigate("settings")}>
+          <Icon name="settings" size={20} />
         </button>
       </header>
 
@@ -91,7 +90,6 @@ export function HomeScreen({
       >
         {heroArt && <img className="feature-hero-art" src={heroArt} alt="" />}
         <div className="feature-copy">
-          <p className="mobile-home-eyebrow"><Icon name="spark" size={12} />Made for this moment</p>
           <h1 className="section-title">{heroTitle}</h1>
           <p className="section-sub">{heroArtist}</p>
           <div className="hero-actions">

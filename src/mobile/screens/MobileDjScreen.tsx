@@ -23,6 +23,14 @@ const SUGGESTIONS = [
   { key: "vocaloid", label: "Vocaloid to keep me company while I work" },
 ];
 
+function presentCaption(value: string): string {
+  const cleaned = value
+    .split(/\s+Local mode\b/i)[0]
+    .split(/\s+[—·-]\s*Local fallback\b/i)[0]
+    .trim();
+  return cleaned || "Mixed from your local library.";
+}
+
 const AUTO_START_PROMPT = "Start a balanced set from my library";
 const CAPTION_HOLD_MS = 6_000;
 
@@ -403,26 +411,40 @@ export function MobileDjScreen({
         </div>
 
         {caption ? (
-          <div className="dj-caption"><Icon name="spark" size={14} /><span>{caption}</span></div>
+          <div className="dj-caption"><Icon name="spark" size={14} /><span>{presentCaption(caption)}</span></div>
         ) : null}
         {error ? <div className="dj-caption dj-error"><span>{error}</span></div> : null}
         {fishPromptCard}
 
-        <button type="button" className="dj-open-full" onClick={onOpenNowPlaying}>Open full player</button>
+        <div className="dj-active-actions">
+          <button type="button" className="dj-active-player" onClick={onOpenNowPlaying} aria-label="Open full player"><Icon name="play" size={24} /></button>
+          <button type="button" className="dj-active-exit" onClick={() => void endSession()} aria-label="Exit DJ"><Icon name="close" size={18} /></button>
+        </div>
 
-        <div className="dj-now-pills">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              className="dj-chip"
-              disabled={phase === "generating"}
-              onClick={() => void generate(s.label)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <button type="button" className="dj-chip dj-chip-ghost" onClick={() => void endSession()}>Exit DJ</button>
+        <div className="dj-input dj-active-composer">
+          <input
+            value={request}
+            onChange={(e) => setRequest(e.target.value)}
+            placeholder="Ask DJ"
+            aria-label="Ask the DJ"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && request.trim() && phase !== "generating") {
+                void generate(request.trim());
+                setRequest("");
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="dj-active-send"
+            aria-label="Send to DJ"
+            disabled={!request.trim() || phase === "generating"}
+            onClick={() => {
+              if (!request.trim()) return;
+              void generate(request.trim());
+              setRequest("");
+            }}
+          ><Icon name="spark" size={17} /></button>
         </div>
       </section>
     );

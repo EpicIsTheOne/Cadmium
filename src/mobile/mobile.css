@@ -841,3 +841,176 @@
   .mobile-shell .now-playing { gap:8px; }
   .mobile-shell .dj-ring { width:min(48vh,230px); }
 }
+
+/* ==========================================================================
+   Literal Spotify-reference pass — flat, dense, content-led, deliberately plain
+   ========================================================================== */
+.app-shell.mobile-shell {
+  --surface: #121212;
+  --surface-raised: #242424;
+  --surface-soft: #242424;
+  --line: rgba(255,255,255,.08);
+  --muted: #b3b3b3;
+  max-width: 480px;
+  background: #121212;
+}
+.mobile-shell .mobile-content {
+  padding: 18px 16px 30px;
+  background: #121212;
+}
+.mobile-shell .mobile-section { gap: 18px; }
+.mobile-shell .section-title { font-size: 28px; font-weight: 800; letter-spacing: -.04em; }
+.mobile-shell .mobile-topline { min-height: 48px; padding: 2px 0; }
+.mobile-shell .topline-action {
+  width: 42px; height: 42px; color: #fff; background: transparent; border: 0;
+}
+
+/* Home resembles the reference: utility grid, then a plain content feature. */
+.mobile-shell .home-quick-grid { gap: 8px; }
+.mobile-shell .home-quick {
+  height: 54px; padding-right: 9px; border: 0; border-radius: 4px;
+  background: #2a2a2a; box-shadow: none; font-size: 12px;
+}
+.mobile-shell .home-quick img,.mobile-shell .home-quick-art { width:54px; height:54px; }
+.mobile-shell .feature-hero {
+  display:grid; grid-template-columns:42% 58%; min-height:160px; overflow:hidden;
+  border:0; border-radius:7px; background:#242424; box-shadow:none;
+}
+.mobile-shell .feature-hero::after { display:none; }
+.mobile-shell .feature-hero-art {
+  position:static; width:100%; height:100%; min-height:160px; object-fit:cover;
+  mask-image:none; -webkit-mask-image:none;
+}
+.mobile-shell .feature-copy {
+  min-width:0; min-height:160px; padding:16px; justify-content:center;
+}
+.mobile-shell .feature-copy h1 { max-width:100%; margin:0 0 6px; font-size:23px; line-height:1.08; }
+.mobile-shell .feature-copy p.section-sub { max-width:100%; margin-bottom:14px; color:#b3b3b3; }
+.mobile-shell .feature-copy .hero-actions .primary-button {
+  padding:9px 15px; color:#08120e; background:var(--accent); box-shadow:none;
+}
+.mobile-shell .hero-more { color:#fff; background:transparent; border:0; }
+.mobile-shell .rail-head h2 { font-size:20px; }
+.mobile-shell .rail-more { color:#b3b3b3; }
+.mobile-shell .track-art-wrap,.mobile-shell .collection-card img,.mobile-shell .collection-card > .art-fallback {
+  border-radius:0; box-shadow:none;
+}
+.mobile-shell .track-play-fab { display:none; }
+
+/* Library follows the supplied screenshot closely. */
+.mobile-shell .library-head { align-items:center; min-height:50px; }
+.mobile-shell .library-title-row { display:flex; align-items:center; gap:12px; min-width:0; }
+.mobile-shell .library-avatar {
+  display:grid; place-items:center; width:38px; height:38px; flex:none; border-radius:50%;
+  color:#08120e; background:var(--accent); font-size:15px; font-weight:850;
+}
+.mobile-shell .library-head-actions { gap:2px; }
+.mobile-shell .library-head-actions .icon-button { width:42px; height:42px; background:transparent; color:#fff; }
+.mobile-shell .segment-tabs { margin-inline:-16px; padding:0 16px; gap:8px; scrollbar-width:none; }
+.mobile-shell .segment-tab {
+  padding:8px 16px; border:0; border-radius:999px; color:#fff; background:#2a2a2a; font-size:13px;
+}
+.mobile-shell .segment-tab.is-active { color:#07130e; background:var(--accent); }
+.mobile-shell .library-sort { padding:12px 0 4px; border-top:1px solid #1d1d1d; margin-top:0; }
+.mobile-shell .library-sort button { color:#fff; font-size:13px; font-weight:700; }
+.mobile-shell .lib-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px 12px; }
+.mobile-shell .lib-card { gap:5px; }
+.mobile-shell .lib-card img,.mobile-shell .lib-card .art-fallback { border-radius:0; box-shadow:none; }
+.mobile-shell .lib-card-title { font-size:13px; font-weight:500; }
+.mobile-shell .lib-card-sub { font-size:11px; color:#a7a7a7; }
+.mobile-shell .list-row { min-height:62px; padding:5px 0; }
+.mobile-shell .row-art { border-radius:2px; box-shadow:none; }
+.mobile-shell .icon-button.is-active { color:var(--accent); background:transparent; }
+
+/* Search is functional chrome, not a branded concept screen. */
+.mobile-shell .search-head .section-title { margin:0; }
+.mobile-shell .search-field { border-radius:4px; }
+.mobile-shell .browse-title { font-size:20px; }
+.mobile-shell .cat-tile { border-radius:7px; box-shadow:none; }
+.mobile-shell .search-group .collection-card { width:124px; }
+
+/* Collection page: plain art + metadata + one green transport action. */
+.mobile-shell .collection-view {
+  background:linear-gradient(180deg,#6a3c2e 0,#39231f 295px,#121212 520px);
+}
+.mobile-shell .collection-cover { width:min(66vw,250px); border-radius:4px; box-shadow:0 16px 34px rgba(0,0,0,.38); }
+.mobile-shell .collection-title-lg { font-size:30px; }
+.mobile-shell .collection-avatar { background:var(--accent); color:#07130e; box-shadow:none; }
+.mobile-shell .collection-actions { min-height:66px; }
+.mobile-shell .play-button-lg { background:var(--accent); box-shadow:none; }
+.mobile-shell .collection-track { min-height:60px; }
+.mobile-shell .collection-track-art { border-radius:2px; box-shadow:none; }
+
+/* Neutral system-like bottom chrome. */
+.mobile-shell .mobile-mini-player {
+  margin:0 7px 2px; border:0; border-radius:7px; background:#343434; box-shadow:none; backdrop-filter:none;
+}
+.mobile-shell .mobile-mini-player.is-playing { border:0; box-shadow:none; }
+.mobile-shell .mini-art { border-radius:4px; box-shadow:none; }
+.mobile-shell .mobile-tabs { background:#0d0d0d; border:0; backdrop-filter:none; }
+.mobile-shell .mobile-tab { color:#a7a7a7; font-size:11px; }
+.mobile-shell .mobile-tab.is-active { color:#fff; }
+.mobile-shell .mobile-tab.is-active svg { color:#fff; filter:none; }
+.mobile-shell .mobile-tab.is-active::after { display:none; }
+
+/* Regular player keeps art color, but loses cyber glow and decorative layers. */
+.mobile-shell .now-playing::before { filter:blur(75px) saturate(.75); opacity:.28; }
+.mobile-shell .now-playing::after { background:linear-gradient(180deg,rgba(12,12,12,.22),rgba(18,18,18,.88) 56%,#121212 100%); }
+.mobile-shell .now-playing-art,.mobile-shell .now-playing-art.rhythm-on { border-radius:4px; outline:0; box-shadow:0 18px 44px rgba(0,0,0,.38); }
+.mobile-shell .rhythm-badge { border-radius:3px; background:var(--accent); color:#07130e; box-shadow:none; }
+
+/* DJ borrows Spotify DJ's decisive solid-color composition. */
+.mobile-shell .dj-now {
+  position:relative;
+  margin:-18px -16px -12px; padding:18px 18px 28px; min-height:100%;
+  background:#175fbd; color:#fff;
+}
+.mobile-shell .dj-now-head .icon-button,.mobile-shell .dj-now-id strong,.mobile-shell .dj-now-meta h2,.mobile-shell .dj-now-meta p { color:#fff; }
+.mobile-shell .dj-now-id .eyebrow { color:rgba(255,255,255,.75); background:none; }
+.mobile-shell .dj-ring {
+  width:min(68vw,280px); background:transparent;
+  box-shadow:inset 0 0 0 10px var(--accent);
+}
+.mobile-shell .dj-ring-bg,.mobile-shell .dj-ring-glow { display:none; }
+.mobile-shell .dj-caption { color:#fff; background:rgba(0,0,0,.16); border:0; box-shadow:none; }
+.mobile-shell .dj-now > .dj-caption:not(.dj-fish-prompt):not(.dj-error) {
+  padding:4px 14px; text-align:center; justify-content:center; background:transparent;
+}
+.mobile-shell .dj-fish-prompt {
+  position:absolute; left:12px; right:12px; bottom:12px; z-index:8;
+  padding:18px; border-radius:14px; background:#242424; box-shadow:0 14px 40px rgba(0,0,0,.45);
+}
+.mobile-shell .dj-fish-prompt > svg { display:none; }
+.mobile-shell .dj-fish-prompt p { margin:0 0 12px; color:#fff; }
+.mobile-shell .dj-fish-prompt input { width:100%; padding:11px 12px; border:0; border-radius:4px; color:#fff; background:#333; }
+.mobile-shell .dj-fish-prompt .dj-now-pills { margin-top:10px; }
+.mobile-shell .dj-open-full { background:#fff; color:#111; }
+.mobile-shell .dj-active-actions { display:flex; justify-content:center; align-items:center; gap:18px; }
+.mobile-shell .dj-active-player,.mobile-shell .dj-active-exit {
+  display:grid; place-items:center; border:0; border-radius:50%;
+}
+.mobile-shell .dj-active-player { width:58px; height:58px; color:#111; background:#fff; }
+.mobile-shell .dj-active-exit { width:42px; height:42px; color:#fff; background:rgba(0,0,0,.22); }
+.mobile-shell .dj-active-composer {
+  min-height:48px; padding:5px 6px 5px 15px; border-radius:999px; background:rgba(0,0,0,.2);
+}
+.mobile-shell .dj-active-composer input { color:#fff; }
+.mobile-shell .dj-active-composer input::placeholder { color:rgba(255,255,255,.74); }
+.mobile-shell .dj-active-send {
+  display:grid; place-items:center; width:38px; height:38px; border:0; border-radius:50%; color:#111; background:#fff;
+}
+.mobile-shell .dj-active-send:disabled { opacity:.42; }
+.mobile-shell .dj-now .dj-chip { color:#fff; background:rgba(0,0,0,.18); border:0; box-shadow:none; }
+.mobile-shell .dj-home { gap:18px; }
+.mobile-shell .dj-home-head { display:none; }
+.mobile-shell .dj-greeting { margin:0; font-size:32px; }
+.mobile-shell .dj-chip,.mobile-shell .dj-chip.is-highlight { border:0; border-radius:7px; background:#2a2a2a; box-shadow:none; }
+.mobile-shell .dj-chip.is-highlight { color:#07130e; background:var(--accent); }
+.mobile-shell .dj-input { border:0; background:#2a2a2a; }
+
+/* Settings is a plain native-style list. */
+.mobile-shell .settings-mobile-hero { padding:4px 0 8px; }
+.mobile-shell .settings-mobile-hero .section-title { margin:0; }
+.mobile-shell .settings-group h2 { font-size:19px; }
+.mobile-shell .settings-action,.mobile-shell .settings-key-row input { border:0; border-radius:4px; background:#2a2a2a; }
+.mobile-shell .pill.ok { color:#07130e; background:var(--accent); box-shadow:none; }

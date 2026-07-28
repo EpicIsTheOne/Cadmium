@@ -45,7 +45,7 @@ export function SearchScreen({
 
   return (
     <section className="mobile-section">
-      <header className="search-head"><p className="mobile-home-eyebrow">Find your sound</p><h1 className="section-title">Search</h1></header>
+      <header className="search-head"><h1 className="section-title">Search</h1></header>
       <div className="search-field">
         <Icon name="search" size={18} />
         <input

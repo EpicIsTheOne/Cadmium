@@ -358,7 +358,6 @@ export default function AppMobile({ runtime }: { runtime: CadmiumRuntime }) {
         <TabButton active={tab === "search"} icon="search" label="Search" onClick={() => setTab("search")} />
         <TabButton active={tab === "library"} icon="library" label="Library" onClick={() => setTab("library")} />
         <TabButton active={tab === "dj"} icon="spark" label="DJ" onClick={() => setTab("dj")} />
-        <TabButton active={tab === "settings"} icon="settings" label="Settings" onClick={() => setTab("settings")} />
       </nav>
 
       {nowPlayingOpen && (
