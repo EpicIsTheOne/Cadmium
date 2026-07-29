@@ -48,6 +48,16 @@ describe("Android SAF picker wiring", () => {
     expect(kotlin).not.toContain("Manifest.permission.MANAGE_EXTERNAL_STORAGE");
   });
 
+  it("does not leave playback invokes pending forever while the service binds", () => {
+    const bridge = fileText(
+      "src-tauri/android/app/src/main/java/com/cadmium/music/RustBridge.kt",
+    );
+    expect(bridge).toContain("bindInFlight");
+    expect(bridge).toContain("runWhenServiceReady");
+    expect(bridge).toContain("Playback service did not become ready");
+    expect(bridge).toContain("mainHandler.postDelayed(timeout, 5_000L)");
+  });
+
   it("keeps SAF rows outside authoritative MediaStore availability updates", () => {
     const library = fileText("src-tauri/src/library.rs");
     expect(library).toContain("source_kind = 'android_saf'");

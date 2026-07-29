@@ -5,7 +5,10 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import app.tauri.annotation.Command
@@ -30,12 +33,15 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
 
     private var service: PlaybackService? = null
     private var bound = false
+    private var bindInFlight = false
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingActions = mutableListOf<() -> Unit>()
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             service = (binder as PlaybackService.LocalBinder).getService()
             bound = true
+            bindInFlight = false
             // Flush any commands that arrived before the service connected.
             val actions = pendingActions.toList()
             pendingActions.clear()
@@ -45,6 +51,7 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
         override fun onServiceDisconnected(name: ComponentName) {
             service = null
             bound = false
+            bindInFlight = false
         }
     }
 
@@ -69,11 +76,21 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
 
     private fun ensureService(): PlaybackService? {
         if (service != null) return service
+        if (bindInFlight) return null
         val intent = Intent(activity, PlaybackService::class.java)
-        // Promote to a foreground media-playback service (user-initiated path).
-        activity.startForegroundService(intent)
-        activity.bindService(intent, connection, Context.BIND_AUTO_CREATE)
-        return service
+        try {
+            // Promote to a foreground media-playback service (user-initiated path).
+            activity.startForegroundService(intent)
+            if (!activity.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+                throw IllegalStateException("Android rejected the playback service bind")
+            }
+            bindInFlight = true
+        } catch (error: Throwable) {
+            bindInFlight = false
+            Log.e("CadmiumPlayback", "Unable to start playback service", error)
+            throw error
+        }
+        return null
     }
 
     private fun withService(action: (PlaybackService) -> Unit) {
@@ -83,6 +100,37 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
         } else {
             // Service not bound yet; run once connected.
             pendingActions.add { withService(action) }
+        }
+    }
+
+    private fun runWhenServiceReady(invoke: Invoke, action: (PlaybackService) -> Unit) {
+        var completed = false
+        val timeout = Runnable {
+            if (!completed) {
+                completed = true
+                invoke.reject("Playback service did not become ready")
+            }
+        }
+        try {
+            withService { service ->
+                if (completed) return@withService
+                try {
+                    action(service)
+                    completed = true
+                    mainHandler.removeCallbacks(timeout)
+                    invoke.resolve(JSObject())
+                } catch (error: Throwable) {
+                    completed = true
+                    mainHandler.removeCallbacks(timeout)
+                    Log.e("CadmiumPlayback", "Playback command failed", error)
+                    invoke.reject(error.message ?: error.javaClass.simpleName)
+                }
+            }
+            mainHandler.postDelayed(timeout, 5_000L)
+        } catch (error: Throwable) {
+            completed = true
+            mainHandler.removeCallbacks(timeout)
+            invoke.reject(error.message ?: error.javaClass.simpleName)
         }
     }
 
@@ -112,15 +160,16 @@ class RustBridge(private val activity: Activity) : Plugin(activity) {
                 .setMediaMetadata(metadata.build())
                 .build()
         }
-        withService { svc ->
-            svc.setQueue(mediaItems, startIndex, 0L)
-            if (!autoplay) svc.pause()
-            invoke.resolve(JSObject())
+        runWhenServiceReady(invoke) { service ->
+            service.setQueue(mediaItems, startIndex, 0L)
+            if (!autoplay) service.pause()
         }
     }
 
     @Command
-    fun play(invoke: Invoke) { withService { it.play() }; invoke.resolve(JSObject()) }
+    fun play(invoke: Invoke) {
+        runWhenServiceReady(invoke) { it.play() }
+    }
 
     @Command
     fun pause(invoke: Invoke) { withService { it.pause() }; invoke.resolve(JSObject()) }
